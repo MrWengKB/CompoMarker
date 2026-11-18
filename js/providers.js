@@ -54,6 +54,9 @@ async function chatOpenAI({ settings, model, system, text, images }) {
   try { data = JSON.parse(raw); } catch { data = null; }
   if (!res.ok) {
     const msg = data?.error?.message || data?.message || raw.slice(0, 300);
+    if (/model.*not.*exist|model_not_found|does not exist/i.test(msg)) {
+      throw new ApiError(`模型「${model}」不存在或已下线（${msg}）。请在「设置 → 高级设置」里点「恢复该服务商的默认模型和地址」，或换成控制台里能用的模型名。`);
+    }
     throw new ApiError(`接口返回错误（HTTP ${res.status}）：${msg}`);
   }
   const out = data?.choices?.[0]?.message?.content;

@@ -6,16 +6,16 @@ export const PROVIDERS = {
     name: '通义千问 · 国际版（Model Studio 新加坡）',
     kind: 'openai',
     baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-    visionModel: 'qwen-vl-max',
-    textModel: 'qwen-max',
+    visionModel: 'qwen3.7-plus',
+    textModel: 'qwen3.7-plus',
     keyHint: '在 modelstudio.console.alibabacloud.com 创建 API Key（sk- 开头），无需国内手机号',
   },
   qwen: {
     name: '通义千问 · 国内版（阿里云百炼）',
     kind: 'openai',
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    visionModel: 'qwen-vl-max',
-    textModel: 'qwen-max',
+    visionModel: 'qwen3.7-plus',
+    textModel: 'qwen3.7-plus',
     keyHint: '在阿里云百炼控制台创建 API Key（sk- 开头）',
   },
   zhipu: {
@@ -46,8 +46,8 @@ export const PROVIDERS = {
     name: '我的 Cloudflare 中转（Key 存在 Worker 里）',
     kind: 'openai',
     baseURL: '',
-    visionModel: 'qwen-vl-max',
-    textModel: 'qwen-max',
+    visionModel: 'qwen3.7-plus',
+    textModel: 'qwen3.7-plus',
     keyHint: '这里填 Worker 里设置的访问口令（ACCESS_CODE），不是模型的真实 Key。接口地址填 https://你的worker.workers.dev/qwen-intl',
   },
   custom: {
@@ -75,9 +75,21 @@ function safeRemove(storage, key) {
   try { storage.removeItem(key); } catch { /* ignore */ }
 }
 
+// 已下线的模型：读取旧设置时自动换成当前预设
+const RETIRED_MODELS = ['qwen-vl-max', 'qwen-vl-plus', 'qwen-turbo', 'qvq-max', 'qwq-plus'];
+
+function dropRetired(overrides) {
+  for (const o of Object.values(overrides || {})) {
+    if (RETIRED_MODELS.includes(o.visionModel)) delete o.visionModel;
+    if (RETIRED_MODELS.includes(o.textModel)) delete o.textModel;
+  }
+  return overrides;
+}
+
 export function loadSettings() {
   let saved = {};
   try { saved = JSON.parse(safeGet(localStorage, SETTINGS_KEY) || '{}'); } catch { saved = {}; }
+  saved.overrides = dropRetired(saved.overrides);
   const provider = PROVIDERS[saved.provider] ? saved.provider : DEFAULT_PROVIDER;
   const overrides = (saved.overrides && saved.overrides[provider]) || {};
   const preset = PROVIDERS[provider];
