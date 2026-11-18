@@ -348,8 +348,12 @@ function showTextSteps() {
 async function runOCR() {
   const btn = $('#btn-ocr');
   const status = $('#ocr-status');
+  const ta = $('#essay-text');
+  const before = ta.value;
   btn.disabled = true;
-  setStatus(status, `正在识别 ${state.images.length} 张图片，通常需要 10～40 秒…`, 'busy');
+  setStatus(status, `正在识别 ${state.images.length} 张图片…`, 'busy');
+  const t0 = Date.now();
+  let shown = false;
   try {
     const text = await chat({
       settings: state.settings,
@@ -357,14 +361,30 @@ async function runOCR() {
       system: OCR_SYSTEM,
       text: ocrUserText(state.images.length),
       images: state.images,
+      onDelta: (partial) => {
+        // 第一段文字到达时展开第二步，之后边识别边显示
+        if (!shown) {
+          shown = true;
+          showTextSteps();
+          ta.readOnly = true;
+          $('#step-text').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        ta.value = partial;
+        ta.scrollTop = ta.scrollHeight;
+        updateStats();
+        setStatus(status, `正在识别…已出 ${partial.replace(/\s/g, '').length} 字`, 'busy');
+      },
     });
-    $('#essay-text').value = text.trim();
+    ta.value = text.trim();
     showTextSteps();
-    setStatus(status, '识别完成，请在下方核对原文。', 'ok');
-    $('#step-text').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setStatus(status, `识别完成（用时 ${Math.round((Date.now() - t0) / 1000)} 秒），请在下方核对原文。`, 'ok');
+    if (!shown) $('#step-text').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
+    if (shown && !ta.value.trim()) ta.value = before;
     setStatus(status, e.message || String(e), 'err');
   } finally {
+    ta.readOnly = false;
+    updateStats();
     btn.disabled = state.images.length === 0;
   }
 }
@@ -476,6 +496,7 @@ async function runMark() {
       model: state.settings.textModel,
       system: MARK_SYSTEM,
       text: markUserText({ essay: body, stats, ...meta }),
+      onDelta: (partial) => setStatus(status, `正在批改…已生成 ${partial.length} 字`, 'busy'),
     });
     const result = normalizeResult(extractJSON(out), rubric, meta.caps);
     state.last = { body, title: meta.title, result, meta, stats };

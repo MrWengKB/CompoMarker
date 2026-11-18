@@ -6,17 +6,18 @@ const ANTHROPIC_SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.4.0/
 
 export class ApiError extends Error {}
 
-export async function chat({ settings, model, system, text, images = [], maxTokens = 8000 }) {
+// onDelta(partialText)：流式输出时每收到一段就回调一次，参数是目前为止的完整文本
+export async function chat({ settings, model, system, text, images = [], maxTokens = 8000, onDelta }) {
   const preset = PROVIDERS[settings.provider];
   if (!settings.apiKey) throw new ApiError('还没有填写 API Key，请先点右上角「设置」。');
   if (!model) throw new ApiError('还没有填写模型名称，请先点右上角「设置」。');
   if (preset.kind === 'anthropic') {
-    return chatAnthropic({ settings, model, system, text, images, maxTokens });
+    return chatAnthropic({ settings, model, system, text, images, maxTokens, onDelta });
   }
-  return chatOpenAI({ settings, model, system, text, images, maxTokens });
+  return chatOpenAI({ settings, model, system, text, images, maxTokens, onDelta });
 }
 
-async function chatOpenAI({ settings, model, system, text, images }) {
+async function chatOpenAI({ settings, model, system, text, images, onDelta }) {
   const base = (settings.baseURL || '').replace(/\/+$/, '');
   if (!base) throw new ApiError('请在「设置」里填写接口地址（Base URL）。');
   const content = images.length
@@ -28,6 +29,7 @@ async function chatOpenAI({ settings, model, system, text, images }) {
   const body = {
     model,
     temperature: 0.3,
+    stream: true,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content },
@@ -49,20 +51,66 @@ async function chatOpenAI({ settings, model, system, text, images }) {
         '可以换一个服务商，或按 README 部署 Cloudflare Worker 中转后，在「设置」里把接口地址改成中转地址。'
     );
   }
-  const raw = await res.text();
-  let data;
-  try { data = JSON.parse(raw); } catch { data = null; }
   if (!res.ok) {
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch { data = null; }
     const msg = data?.error?.message || data?.message || raw.slice(0, 300);
     if (/model.*not.*exist|model_not_found|does not exist/i.test(msg)) {
       throw new ApiError(`模型「${model}」不存在或已下线（${msg}）。请在「设置 → 高级设置」里点「恢复该服务商的默认模型和地址」，或换成控制台里能用的模型名。`);
     }
     throw new ApiError(`接口返回错误（HTTP ${res.status}）：${msg}`);
   }
-  const out = data?.choices?.[0]?.message?.content;
-  if (typeof out === 'string') return out;
-  if (Array.isArray(out)) return out.map((p) => p.text || '').join('');
-  throw new ApiError('接口返回内容为空或格式无法识别。');
+
+  // 有的服务即使请求了 stream 也可能直接返回完整 JSON，兼容一下
+  const type = res.headers.get('content-type') || '';
+  if (!type.includes('event-stream')) {
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch { data = null; }
+    const out = data?.choices?.[0]?.message?.content;
+    const textOut = typeof out === 'string' ? out : Array.isArray(out) ? out.map((p) => p.text || '').join('') : null;
+    if (textOut == null) throw new ApiError('接口返回内容为空或格式无法识别。');
+    onDelta?.(textOut);
+    return textOut;
+  }
+
+  // 解析 SSE：每行 "data: {...}"，以 "data: [DONE]" 结束
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let full = '';
+  const handleLine = (line) => {
+    const t = line.trim();
+    if (!t.startsWith('data:')) return;
+    const payload = t.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    let chunk;
+    try { chunk = JSON.parse(payload); } catch { return; }
+    if (chunk.error) throw new ApiError(`接口返回错误：${chunk.error.message || JSON.stringify(chunk.error)}`);
+    const d = chunk.choices?.[0]?.delta?.content;
+    const piece = typeof d === 'string' ? d : Array.isArray(d) ? d.map((p) => p.text || '').join('') : '';
+    if (piece) {
+      full += piece;
+      onDelta?.(full);
+    }
+  };
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split(/\r?\n/);
+      buf = lines.pop();
+      lines.forEach(handleLine);
+    }
+    if (buf) handleLine(buf);
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    throw new ApiError('接收结果时网络中断，请重试。');
+  }
+  if (!full) throw new ApiError('接口返回内容为空。');
+  return full;
 }
 
 let anthropicModule = null;
@@ -77,7 +125,7 @@ async function loadAnthropic() {
   return anthropicModule.default;
 }
 
-async function chatAnthropic({ settings, model, system, text, images, maxTokens }) {
+async function chatAnthropic({ settings, model, system, text, images, maxTokens, onDelta }) {
   const Anthropic = await loadAnthropic();
   const client = new Anthropic({
     apiKey: settings.apiKey,
@@ -102,6 +150,13 @@ async function chatAnthropic({ settings, model, system, text, images, maxTokens 
       fallbacks: 'default',
       messages: [{ role: 'user', content }],
     });
+    if (onDelta) {
+      let acc = '';
+      stream.on('text', (delta) => {
+        acc += delta;
+        onDelta(acc);
+      });
+    }
     msg = await stream.finalMessage();
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) throw new ApiError('Claude API Key 无效，请在「设置」里检查。');
