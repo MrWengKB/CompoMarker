@@ -29,11 +29,11 @@
 
     <!-- 第一步：上传 -->
     <section class="card" id="step-upload">
-      <h2><span class="step">1</span>上传作文照片</h2>
+      <h2><span class="step">1</span>上传作文（照片或 PDF）</h2>
       <label class="dropzone" id="dropzone">
-        <input type="file" id="file-input" accept="image/*" multiple hidden>
-        <strong>点击拍照或选择图片</strong>
-        <span>也可以把图片拖到这里。一篇作文有多页时，按顺序选择多张。</span>
+        <input type="file" id="file-input" accept="image/*,application/pdf,.pdf" multiple hidden>
+        <strong>点击拍照，或选择图片 / PDF</strong>
+        <span>也可以把文件拖到这里。一篇作文有多页时，按顺序选择多张图片，或上传一个多页 PDF。</span>
       </label>
       <ul class="thumbs" id="thumbs"></ul>
       <div class="row">

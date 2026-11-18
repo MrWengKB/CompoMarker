@@ -124,6 +124,11 @@ function loadImage(src) {
   });
 }
 
+function canvasToImage(canvas, name) {
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  return { name, dataUrl, mediaType: 'image/jpeg', data: dataUrl.split(',')[1] };
+}
+
 // 压缩到长边不超过 MAX_IMAGE_SIDE，统一转 JPEG，减小上传体积
 async function prepareImage(file) {
   const src = await readAsDataURL(file);
@@ -138,21 +143,62 @@ async function prepareImage(file) {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-  return { name: file.name, dataUrl, mediaType: 'image/jpeg', data: dataUrl.split(',')[1] };
+  return canvasToImage(canvas, file.name);
 }
 
+const MAX_PDF_PAGES = 10;
+let pdfjsLib = null;
+
+// PDF 每一页渲染成一张图片（扫描件、手机扫描 App 导出的 PDF 都可以）
+async function pdfToImages(file) {
+  if (!pdfjsLib) {
+    pdfjsLib = await import('./vendor/pdfjs/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
+  }
+  const task = pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const doc = await task.promise;
+  const count = Math.min(doc.numPages, MAX_PDF_PAGES);
+  if (doc.numPages > MAX_PDF_PAGES) toast(`PDF 共 ${doc.numPages} 页，只取前 ${MAX_PDF_PAGES} 页`, 4000);
+  const out = [];
+  for (let i = 1; i <= count; i++) {
+    const page = await doc.getPage(i);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: MAX_IMAGE_SIDE / Math.max(base.width, base.height) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+    out.push(canvasToImage(canvas, `${file.name} 第${i}页`));
+  }
+  task.destroy().catch(() => {});
+  return out;
+}
+
+const isPDF = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+
 async function addFiles(files) {
-  const list = [...files].filter((f) => f.type.startsWith('image/'));
-  if (!list.length) return toast('请选择图片文件');
+  const list = [...files].filter((f) => f.type.startsWith('image/') || isPDF(f));
+  if (!list.length) return toast('请选择图片或 PDF 文件');
+  const status = $('#ocr-status');
   for (const f of list) {
     try {
-      state.images.push(await prepareImage(f));
-    } catch {
-      toast(`无法读取图片：${f.name}（HEIC 格式请先转成 JPG）`, 4000);
+      if (isPDF(f)) {
+        setStatus(status, `正在读取 PDF：${f.name}…`, 'busy');
+        state.images.push(...(await pdfToImages(f)));
+        setStatus(status, '');
+      } else {
+        state.images.push(await prepareImage(f));
+      }
+    } catch (e) {
+      setStatus(status, '');
+      toast(isPDF(f) ? `无法读取 PDF：${f.name}（文件可能已加密或损坏）` : `无法读取图片：${f.name}（HEIC 格式请先转成 JPG）`, 4000);
+      console.error(e);
     }
+    renderThumbs();
   }
-  renderThumbs();
 }
 
 function renderThumbs() {
