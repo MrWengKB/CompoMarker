@@ -46,9 +46,15 @@ async function chatOpenAI({ settings, model, system, text, images, onDelta }) {
       body: JSON.stringify(body),
     });
   } catch (e) {
+    let host = base;
+    try { host = new URL(base).host; } catch { /* ignore */ }
+    const viaWorker = /\.workers\.dev$/i.test(host);
+    const sizeMB = (JSON.stringify(body).length / 1048576).toFixed(1);
     throw new ApiError(
-      '无法连接到模型接口（网络错误，或该服务不允许浏览器直接访问 / 跨域被拦截）。' +
-        '可以换一个服务商，或按 README 部署 Cloudflare Worker 中转后，在「设置」里把接口地址改成中转地址。'
+      `无法连接到 ${host}（${e?.message || e}；本次上传约 ${sizeMB} MB）。` +
+        (viaWorker
+          ? '请检查：① 网络是否正常；② 设置里的 Cloudflare 用户名是否正确；③ 是否从 https://mrwengkb.github.io/CompoMarker/ 打开本网页。也可以先只传 1 页试试。'
+          : '这个服务可能不允许浏览器直接访问。建议在「设置」里改用「我的 Cloudflare 中转」，详见「设置指南」。')
     );
   }
   if (!res.ok) {

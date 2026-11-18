@@ -61,6 +61,17 @@ function json(status, message, cors) {
 
 export default {
   async fetch(request, env) {
+    try {
+      return await handle(request, env);
+    } catch (e) {
+      const origin = request.headers.get('Origin') || '';
+      return json(500, `中转内部错误：${e?.message || e}`, corsHeaders(origin, env));
+    }
+  },
+};
+
+async function handle(request, env) {
+  {
     const origin = request.headers.get('Origin') || '';
     const cors = corsHeaders(origin, env);
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -95,16 +106,22 @@ export default {
     }
     // 用法 B：其余情况原样转发（网页填的是自己的真实 Key）
 
-    const upstream = await fetch(`${up.base}/${path}${url.search}`, {
-      method: 'POST',
-      headers,
-      body: request.body,
-    });
+    let upstream;
+    try {
+      upstream = await fetch(`${up.base}/${path}${url.search}`, {
+        method: 'POST',
+        headers,
+        body: request.body,
+      });
+    } catch (e) {
+      // 出错时也带上跨域头，网页才能看到具体原因
+      return json(502, `中转连接模型服务失败：${e?.message || e}`, cors);
+    }
     const out = new Headers(upstream.headers);
     for (const [k, v] of Object.entries(cors)) out.set(k, v);
     return new Response(upstream.body, { status: upstream.status, headers: out });
-  },
-};
+  }
+}
 
 function looksLikeRealKey(s) {
   return /^sk-/.test(s) || s.length >= 40;

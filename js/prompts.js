@@ -9,8 +9,13 @@ export const OCR_SYSTEM = `你是一名中文手写作文转写员。你的任�
 5. 有多张图片时按图片顺序依次转写，连成一篇。
 6. 只输出转写结果，不要输出任何解释或说明。`;
 
-export function ocrUserText(count) {
-  return count > 1 ? `以下是同一篇作文的 ${count} 张照片，请按顺序转写。` : '请转写这篇作文。';
+export const CONTINUE_MARK = '〔续〕';
+
+// 多页时逐页识别，避免一次上传过大
+export function ocrPageText(index, total) {
+  if (total <= 1) return '请转写这篇作文。';
+  if (index === 0) return `这篇作文共 ${total} 页，这是第 1 页，请转写这一页。`;
+  return `这篇作文共 ${total} 页，这是第 ${index + 1} 页，请只转写这一页。这一页没有标题，不要输出「标题：」。如果这一页开头是在接着上一页没写完的段落（第一行开头没有空两格），请在输出的最前面加上「${CONTINUE_MARK}」；如果开头就是新的一段，则不要加。`;
 }
 
 const STYLE_TEXT = {

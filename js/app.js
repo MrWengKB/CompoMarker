@@ -1,7 +1,7 @@
 import { PROVIDERS, loadSettings, saveSettings, settingsFor, clearAllKeys } from './config.js';
 import { chat, extractJSON } from './providers.js';
 import { RUBRICS, DEFAULT_RUBRIC, cloneItems, rubricForGrade } from './rubrics.js';
-import { OCR_SYSTEM, ocrUserText, MARK_SYSTEM, markUserText } from './prompts.js';
+import { OCR_SYSTEM, ocrPageText, CONTINUE_MARK, MARK_SYSTEM, markUserText } from './prompts.js';
 import { splitTitle, textStats, findMarks, renderMarked, escapeHTML } from './analyze.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -345,43 +345,63 @@ function showTextSteps() {
   updateStats();
 }
 
+// 把下一页的识别结果接到前面：续写的段落直接接上，新段落空一行
+function joinPage(prev, page) {
+  let t = page.trim();
+  if (!prev) return t;
+  if (t.startsWith(CONTINUE_MARK)) return prev.replace(/\s+$/, '') + t.slice(CONTINUE_MARK.length).trimStart();
+  return `${prev.replace(/\s+$/, '')}\n\n${t}`;
+}
+
 async function runOCR() {
   const btn = $('#btn-ocr');
   const status = $('#ocr-status');
   const ta = $('#essay-text');
   const before = ta.value;
+  const pages = [...state.images];
+  const n = pages.length;
   btn.disabled = true;
-  setStatus(status, `正在识别 ${state.images.length} 张图片…`, 'busy');
+  setStatus(status, n > 1 ? `正在识别第 1 / ${n} 页…` : '正在识别…', 'busy');
   const t0 = Date.now();
   let shown = false;
-  try {
-    const text = await chat({
-      settings: state.settings,
-      model: state.settings.visionModel,
-      system: OCR_SYSTEM,
-      text: ocrUserText(state.images.length),
-      images: state.images,
-      onDelta: (partial) => {
-        // 第一段文字到达时展开第二步，之后边识别边显示
-        if (!shown) {
-          shown = true;
-          showTextSteps();
-          ta.readOnly = true;
-          $('#step-text').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        ta.value = partial;
-        ta.scrollTop = ta.scrollHeight;
-        updateStats();
-        setStatus(status, `正在识别…已出 ${partial.replace(/\s/g, '').length} 字`, 'busy');
-      },
-    });
-    ta.value = text.trim();
+  let done = '';
+  const reveal = () => {
+    if (shown) return;
+    shown = true;
     showTextSteps();
-    setStatus(status, `识别完成（用时 ${Math.round((Date.now() - t0) / 1000)} 秒），请在下方核对原文。`, 'ok');
+    ta.readOnly = true;
+    $('#step-text').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  try {
+    // 逐页识别：每次只上传一页，避免多页一起上传时请求过大被中断
+    for (let i = 0; i < n; i++) {
+      const pageLabel = n > 1 ? `第 ${i + 1} / ${n} 页` : '';
+      const text = await chat({
+        settings: state.settings,
+        model: state.settings.visionModel,
+        system: OCR_SYSTEM,
+        text: ocrPageText(i, n),
+        images: [pages[i]],
+        onDelta: (partial) => {
+          reveal();
+          const cur = partial.startsWith(CONTINUE_MARK) || CONTINUE_MARK.startsWith(partial) ? partial.slice(CONTINUE_MARK.length) : partial;
+          ta.value = done ? `${done}\n\n${cur}` : cur;
+          ta.scrollTop = ta.scrollHeight;
+          updateStats();
+          setStatus(status, `正在识别${pageLabel}…已出 ${ta.value.replace(/\s/g, '').length} 字`, 'busy');
+        },
+      });
+      done = joinPage(done, text);
+      ta.value = done;
+    }
+    showTextSteps();
+    setStatus(status, `识别完成（${n > 1 ? `${n} 页，` : ''}用时 ${Math.round((Date.now() - t0) / 1000)} 秒），请在下方核对原文${n > 1 ? '，特别留意换页处的分段' : ''}。`, 'ok');
     if (!shown) $('#step-text').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
-    if (shown && !ta.value.trim()) ta.value = before;
-    setStatus(status, e.message || String(e), 'err');
+    if (done) ta.value = done;
+    else if (shown) ta.value = before;
+    const where = n > 1 && done ? `（前面的页已识别好并保留在下方）` : '';
+    setStatus(status, (e.message || String(e)) + where, 'err');
   } finally {
     ta.readOnly = false;
     updateStats();
