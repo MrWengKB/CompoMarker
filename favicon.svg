@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- 绿色田字格 -->
+  <rect x="2" y="2" width="60" height="60" rx="6" fill="#eaf6ec" stroke="#2e8b57" stroke-width="4"/>
+  <path d="M32 4V60M4 32H60" stroke="#2e8b57" stroke-width="2" stroke-dasharray="4 3"/>
+  <!-- 红色钢笔笔尖（线稿），笔尖朝左下 -->
+  <g transform="translate(33 31) rotate(45)" fill="none" stroke="#d32f2f" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M0 24 L-10 4 L-10 -14 L10 -14 L10 4 Z"/>
+    <path d="M-10 -8 H10"/>
+    <path d="M0 24 V5"/>
+    <circle cx="0" cy="2" r="2.6"/>
+  </g>
+</svg>
