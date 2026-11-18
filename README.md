@@ -32,11 +32,24 @@
 - 网页里**没有**写死任何 Key，Key 由使用者自己填写，只保存在本机浏览器（可选择关闭页面即清除）。
 - 作文照片和文字由浏览器直接发送给你选择的模型服务商，不经过其他服务器。
 
-## 浏览器直连被拦截怎么办（可选中转）
+## 用 Cloudflare Worker 保存 Key（可选）
 
-部分服务商可能不允许网页直接跨域调用。这时可以部署 `worker/relay.js` 到 Cloudflare Workers（免费额度足够），
-然后在「设置 → 高级设置 → 接口地址」里填 `https://<你的worker>.workers.dev/qwen`（或 `/zhipu`、`/openai`、`/claude`）。
-记得把 `relay.js` 里的 `ALLOWED_ORIGINS` 改成你自己的网页地址。
+不想在每台电脑的浏览器里填真实 Key，或者想给同事用但不想把 Key 给他们，可以把 Key 存在 Cloudflare Worker 里，网页里只填一个访问口令。顺便也解决了部分服务商不允许浏览器直连的问题。
+
+1. 登录 Cloudflare 控制台 → Workers & Pages → 创建 → 选「Hello World」模板，起个名字（如 `compomarker`）→ 部署。
+2. 点「编辑代码」，把 `worker/relay.js` 的内容整个粘贴进去 → 部署。
+3. 进入这个 Worker 的「设置 → 变量和机密」，添加两个**机密（Secret）**：
+   - `ACCESS_CODE`：自己定的访问口令，越长越难猜越好
+   - `QWEN_INTL_KEY`：通义千问国际版的真实 Key（用其他服务商就加对应的 `QWEN_KEY`、`ZHIPU_KEY`、`OPENAI_KEY`、`CLAUDE_KEY`）
+4. 如果网页不是放在 `https://mrwengkb.github.io`，再加一个普通变量 `ALLOWED_ORIGINS` 填你的网页地址。
+5. 打开作文批改网页 →「设置」→ 选「我的 Cloudflare 中转」：
+   - 接口地址：`https://compomarker.<你的账号>.workers.dev/qwen-intl`
+   - API Key：填第 3 步的访问口令
+
+说明：
+- 真实 Key 只存在 Cloudflare，不会出现在网页代码和浏览器里。
+- Worker 只接受来自你网页的请求，并且只转发模型对话接口。但口令一旦泄露，别人就能用你的额度，所以口令不要公开，发现异常就在 Cloudflare 里换一个。
+- 不设置 `ACCESS_CODE` 时，Worker 就是一个纯转发中转，网页里照常填自己的真实 Key。
 
 ## 本地运行
 

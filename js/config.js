@@ -42,6 +42,14 @@ export const PROVIDERS = {
     textModel: 'gpt-4o',
     keyHint: '在 platform.openai.com 创建 API Key',
   },
+  worker: {
+    name: '我的 Cloudflare 中转（Key 存在 Worker 里）',
+    kind: 'openai',
+    baseURL: '',
+    visionModel: 'qwen-vl-max',
+    textModel: 'qwen-max',
+    keyHint: '这里填 Worker 里设置的访问口令（ACCESS_CODE），不是模型的真实 Key。接口地址填 https://你的worker.workers.dev/qwen-intl',
+  },
   custom: {
     name: '自定义（OpenAI 兼容接口 / 自建中转）',
     kind: 'openai',

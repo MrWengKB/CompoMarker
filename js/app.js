@@ -50,7 +50,14 @@ function fillSettingsForm(provider) {
   $('#s-vision').value = s.visionModel || '';
   $('#s-text').value = s.textModel || '';
   $('#s-key-hint').textContent = PROVIDERS[provider].keyHint;
-  $('#s-base').placeholder = PROVIDERS[provider].baseURL || (PROVIDERS[provider].kind === 'anthropic' ? '使用官方地址' : '必填');
+  const p = PROVIDERS[provider];
+  $('#s-base').placeholder =
+    provider === 'worker'
+      ? '必填，例如 https://compomarker.你的账号.workers.dev/qwen-intl'
+      : p.baseURL || (p.kind === 'anthropic' ? '使用官方地址' : '必填');
+  // 需要手填接口地址时自动展开高级设置
+  if (!s.baseURL && p.kind === 'openai') document.querySelector('#dlg-settings details').open = true;
+  $('#s-key').placeholder = provider === 'worker' ? '访问口令' : '';
 }
 
 function initSettings() {
