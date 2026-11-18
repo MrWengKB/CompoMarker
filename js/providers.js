@@ -1,23 +1,27 @@
 // 统一的模型调用：chat({ settings, model, system, text, images }) -> 文本
 // images: [{ mediaType: 'image/jpeg', data: '<base64，不带 data: 前缀>' }]
 import { PROVIDERS } from './config.js';
+import { repairJSON } from './jsonrepair.js';
 
 const ANTHROPIC_SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.4.0/+esm';
 
 export class ApiError extends Error {}
 
 // onDelta(partialText)：流式输出时每收到一段就回调一次，参数是目前为止的完整文本
-export async function chat({ settings, model, system, text, images = [], maxTokens = 8000, onDelta }) {
+export async function chat({ settings, model, system, text, images = [], maxTokens = 8000, onDelta, json = false }) {
   const preset = PROVIDERS[settings.provider];
   if (!settings.apiKey) throw new ApiError('还没有填写 API Key，请先点右上角「设置」。');
   if (!model) throw new ApiError('还没有填写模型名称，请先点右上角「设置」。');
   if (preset.kind === 'anthropic') {
     return chatAnthropic({ settings, model, system, text, images, maxTokens, onDelta });
   }
-  return chatOpenAI({ settings, model, system, text, images, maxTokens, onDelta });
+  return chatOpenAI({ settings, model, system, text, images, maxTokens, onDelta, json });
 }
 
-async function chatOpenAI({ settings, model, system, text, images, onDelta }) {
+// 记住哪些「接口地址 + 模型」不支持 JSON 模式，避免每次都失败一次
+const noJsonMode = new Set();
+
+async function chatOpenAI({ settings, model, system, text, images, onDelta, json }) {
   const base = (settings.baseURL || '').replace(/\/+$/, '');
   if (!base) throw new ApiError('请在「设置」里填写接口地址（Base URL）。');
   const content = images.length
@@ -30,6 +34,7 @@ async function chatOpenAI({ settings, model, system, text, images, onDelta }) {
     model,
     temperature: 0.3,
     stream: true,
+    ...(json && !noJsonMode.has(`${settings.baseURL}|${model}`) ? { response_format: { type: 'json_object' } } : {}),
     messages: [
       { role: 'system', content: system },
       { role: 'user', content },
@@ -62,6 +67,11 @@ async function chatOpenAI({ settings, model, system, text, images, onDelta }) {
     let data;
     try { data = JSON.parse(raw); } catch { data = null; }
     const msg = data?.error?.message || data?.message || raw.slice(0, 300);
+    if (body.response_format && res.status === 400 && /response_format|json/i.test(msg)) {
+      // 该模型不支持 JSON 模式：去掉后重试一次
+      noJsonMode.add(`${settings.baseURL}|${model}`);
+      return chatOpenAI({ settings, model, system, text, images, onDelta, json: false });
+    }
     if (/model.*not.*exist|model_not_found|does not exist/i.test(msg)) {
       throw new ApiError(`模型「${model}」不存在或已下线（${msg}）。请在「设置 → 高级设置」里点「恢复该服务商的默认模型和地址」，或换成控制台里能用的模型名。`);
     }
@@ -178,17 +188,43 @@ async function chatAnthropic({ settings, model, system, text, images, maxTokens,
 // 从模型输出里尽量稳妥地取出 JSON 对象
 export function extractJSON(s) {
   let t = String(s).trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)(```|$)/i);
   if (fence) t = fence[1].trim();
   const first = t.indexOf('{');
+  if (first === -1) throw new ApiError('模型没有返回 JSON 格式的批改结果。');
   const last = t.lastIndexOf('}');
-  if (first === -1 || last <= first) throw new ApiError('模型没有返回 JSON 格式的批改结果。');
-  const body = t.slice(first, last + 1);
+  const balanced = firstBalancedObject(t, first);
+  const body = balanced || (last > first ? t.slice(first, last + 1) : t.slice(first));
   try {
-    return JSON.parse(body);
-  } catch {
-    // 常见问题：结尾多余逗号
-    try { return JSON.parse(body.replace(/,\s*([}\]])/g, '$1')); } catch { /* fallthrough */ }
-    throw new ApiError('批改结果的 JSON 解析失败，可以点「重新批改」再试一次。');
+    return { value: JSON.parse(body), truncated: false };
+  } catch { /* 交给下面的修复 */ }
+  // 逐个候选修复：优先选没被截断的；都被截断时选保住内容最多的
+  let best = null;
+  for (const candidate of [body, t.slice(first)]) {
+    try {
+      const r = repairJSON(candidate);
+      if (!r.truncated) return r;
+      if (!best || JSON.stringify(r.value).length > JSON.stringify(best.value).length) best = r;
+    } catch { /* 试下一个 */ }
   }
+  if (best) return best;
+  throw new ApiError('批改结果的 JSON 解析失败。');
+}
+
+// 找到从 start 开始、括号配对完整的第一个 JSON 对象（忽略字符串里的括号）；找不到返回 null
+function firstBalancedObject(t, start) {
+  let depth = 0;
+  let inStr = false;
+  for (let i = start; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) {
+      if (c === '\\') i++;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return t.slice(start, i + 1);
+  }
+  return null;
 }

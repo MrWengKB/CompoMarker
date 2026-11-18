@@ -510,22 +510,43 @@ async function runMark() {
   const btn = $('#btn-mark');
   btn.disabled = true;
   setStatus(status, '正在批改，通常需要 20～60 秒…', 'busy');
+  const rawBox = $('#mark-raw');
+  rawBox.hidden = true;
+  let lastOut = '';
   try {
-    const out = await chat({
-      settings: state.settings,
-      model: state.settings.textModel,
-      system: MARK_SYSTEM,
-      text: markUserText({ essay: body, stats, ...meta }),
-      onDelta: (partial) => setStatus(status, `正在批改…已生成 ${partial.length} 字`, 'busy'),
-    });
-    const result = normalizeResult(extractJSON(out), rubric, meta.caps);
+    let parsed = null;
+    // 最多试两次：第一次解析失败或结果被截断得太厉害时，自动重新请求一次
+    for (let attempt = 1; attempt <= 2 && !parsed; attempt++) {
+      if (attempt > 1) setStatus(status, '上一次结果格式有问题，正在自动重试…', 'busy');
+      lastOut = await chat({
+        settings: state.settings,
+        model: state.settings.textModel,
+        system: MARK_SYSTEM,
+        text: markUserText({ essay: body, stats, ...meta }),
+        json: true,
+        onDelta: (partial) => setStatus(status, `正在批改${attempt > 1 ? '（重试）' : ''}…已生成 ${partial.length} 字`, 'busy'),
+      });
+      try {
+        const p = extractJSON(lastOut);
+        const usable = Array.isArray(p.value?.scores) && p.value.scores.length > 0;
+        if (usable && (!p.truncated || attempt === 2)) parsed = p;
+      } catch (err) {
+        if (attempt === 2) throw err;
+      }
+    }
+    if (!parsed) throw new Error('批改结果不完整。');
+    const result = normalizeResult(parsed.value, rubric, meta.caps);
     state.last = { body, title: meta.title, result, meta, stats };
     renderResult();
     saveHistory(state.last);
-    setStatus(status, '批改完成。', 'ok');
+    setStatus(status, parsed.truncated ? '批改完成，但结果被截断，部分内容可能缺失，可以点「重新批改」。' : '批改完成。', parsed.truncated ? 'err' : 'ok');
     $('#step-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
-    setStatus(status, e.message || String(e), 'err');
+    setStatus(status, `${e.message || String(e)}已自动重试过一次，可以再点「开始批改」试试。`, 'err');
+    if (lastOut) {
+      rawBox.querySelector('pre').textContent = lastOut;
+      rawBox.hidden = false;
+    }
   } finally {
     btn.disabled = false;
   }
