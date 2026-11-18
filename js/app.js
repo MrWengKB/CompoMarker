@@ -1,6 +1,6 @@
 import { PROVIDERS, loadSettings, saveSettings, settingsFor, clearAllKeys } from './config.js';
 import { chat, extractJSON } from './providers.js';
-import { RUBRICS, DEFAULT_RUBRIC, cloneItems } from './rubrics.js';
+import { RUBRICS, DEFAULT_RUBRIC, cloneItems, rubricForGrade } from './rubrics.js';
 import { OCR_SYSTEM, ocrUserText, MARK_SYSTEM, markUserText } from './prompts.js';
 import { splitTitle, textStats, findMarks, renderMarked, escapeHTML } from './analyze.js';
 
@@ -11,6 +11,7 @@ const MAX_IMAGE_SIDE = 2000;
 const state = {
   settings: loadSettings(),
   images: [],
+  rubricKey: DEFAULT_RUBRIC,
   rubric: cloneItems(DEFAULT_RUBRIC),
   last: null, // { body, title, result, meta }
 };
@@ -272,18 +273,21 @@ function updateRubricTotal() {
   $('#rubric-total').textContent = `共 ${total} 分`;
 }
 
+function applyPreset(key) {
+  state.rubricKey = key;
+  state.rubric = cloneItems(key);
+  $('#rubric-preset').value = key;
+  $('#rubric-guide').value = RUBRICS[key].guide;
+  renderRubric();
+}
+
 function initRubric() {
   const sel = $('#rubric-preset');
-  sel.innerHTML =
-    Object.entries(RUBRICS)
-      .map(([k, r]) => `<option value="${k}">${escapeHTML(r.label)}</option>`)
-      .join('') + '<option value="" disabled>（可直接在表格中修改）</option>';
-  sel.value = DEFAULT_RUBRIC;
-  sel.addEventListener('change', () => {
-    if (!sel.value) return;
-    state.rubric = cloneItems(sel.value);
-    renderRubric();
-  });
+  sel.innerHTML = Object.entries(RUBRICS)
+    .map(([k, r]) => `<option value="${k}">${escapeHTML(r.label)}</option>`)
+    .join('');
+  sel.addEventListener('change', () => applyPreset(sel.value));
+  $('#grade').addEventListener('change', () => applyPreset(rubricForGrade($('#grade').value)));
   const table = $('#rubric-table');
   table.addEventListener('input', (ev) => {
     const tr = ev.target.closest('tr[data-i]');
@@ -302,7 +306,7 @@ function initRubric() {
     state.rubric.push({ name: '', max: 5, desc: '' });
     renderRubric();
   });
-  renderRubric();
+  applyPreset(rubricForGrade($('#grade').value));
 }
 
 /* ---------------- 批改 ---------------- */
@@ -322,6 +326,8 @@ async function runMark() {
     minWords: Number($('#min-words').value) || 0,
     style: $('#style').value,
     rubric,
+    guide: $('#rubric-guide').value.trim(),
+    caps: RUBRICS[state.rubricKey]?.caps || {},
     provider: PROVIDERS[state.settings.provider].name,
     model: state.settings.textModel,
     time: Date.now(),
@@ -337,7 +343,7 @@ async function runMark() {
       system: MARK_SYSTEM,
       text: markUserText({ essay: body, stats, ...meta }),
     });
-    const result = normalizeResult(extractJSON(out), rubric);
+    const result = normalizeResult(extractJSON(out), rubric, meta.caps);
     state.last = { body, title: meta.title, result, meta, stats };
     renderResult();
     saveHistory(state.last);
@@ -350,12 +356,21 @@ async function runMark() {
   }
 }
 
-function normalizeResult(r, rubric) {
+function normalizeResult(r, rubric, caps = {}) {
   const arr = (x) => (Array.isArray(x) ? x : []);
+  const topic = ['切题', '不切合题意', '离题'].includes(r.topic) ? r.topic : '切题';
+  const cap = caps[topic] || {};
   const scores = arr(r.scores).map((s, i) => {
-    const max = Number(s.max) || Number(rubric[i]?.max) || 0;
-    const score = Math.max(0, Math.min(max || Infinity, Number(s.score) || 0));
-    return { name: s.name || rubric[i]?.name || `维度${i + 1}`, score, max, comment: s.comment || '' };
+    const name = s.name || rubric[i]?.name || `维度${i + 1}`;
+    const max = Number(rubric.find((x) => x.name === name)?.max) || Number(s.max) || Number(rubric[i]?.max) || 0;
+    let score = Math.max(0, Math.min(max || Infinity, Number(s.score) || 0));
+    let comment = s.comment || '';
+    // 切题规定：不切合题意 / 离题时按评分准则封顶
+    if (name in cap && score > cap[name]) {
+      score = cap[name];
+      comment = `${comment}（${topic}，本项以 ${cap[name]} 分为上限）`;
+    }
+    return { name, score, max, comment };
   });
   const total = scores.reduce((a, s) => a + s.score, 0);
   const max = scores.reduce((a, s) => a + s.max, 0) || rubric.reduce((a, s) => a + Number(s.max), 0);
@@ -364,6 +379,7 @@ function normalizeResult(r, rubric) {
     total: Math.round(total * 10) / 10,
     max,
     level: r.level || '',
+    topic,
     typos: arr(r.typos).filter((t) => t && t.wrong),
     sentences: arr(r.sentences).filter((s) => s && s.original),
     highlights: arr(r.highlights).filter((s) => s && s.original),
@@ -391,8 +407,9 @@ function renderResult() {
       </div>
       <div class="score-side">
         ${title ? `<h3 class="essay-title">《${escapeHTML(title)}》</h3>` : ''}
-        ${r.level ? `<span class="level ${tone}">${escapeHTML(r.level)}</span>` : ''}
-        <p class="muted small">${escapeHTML(meta.grade)} · 汉字 ${stats.hanzi}${meta.minWords && stats.hanzi < meta.minWords ? `（<span class="warn">不足 ${meta.minWords}</span>）` : ''} · ${stats.paragraphs} 段 · 错别字 ${r.typos.length} · 病句 ${r.sentences.length}</p>
+        ${r.level ? `<span class="level ${tone}">等级：${escapeHTML(r.level)}</span>` : ''}
+        ${r.topic && r.topic !== '切题' ? `<span class="level bad">${r.topic === '离题' ? '#' : 'Δ'} ${escapeHTML(r.topic)}</span>` : ''}
+        <p class="muted small">${escapeHTML(meta.grade)} · 汉字 ${stats.hanzi}${meta.minWords && stats.hanzi < meta.minWords ? `（<span class="warn">不足 ${meta.minWords}</span>）` : ''} · ${stats.paragraphs} 段 · 错别字 ${r.typos.length} · 文句问题 ${r.sentences.length}</p>
         <div class="bars">
           ${r.scores
             .map(
@@ -415,15 +432,15 @@ function renderResult() {
     <div class="result-grid">
       <div>
         <div class="legend">
-          <span><mark class="m-typo">错别字</mark></span>
-          <span><mark class="m-sentence">病句</mark></span>
-          <span><mark class="m-good">好句</mark></span>
+          <span><mark class="m-typo">× 错别字</mark></span>
+          <span><mark class="m-sentence">~~ 文句/标点问题</mark></span>
+          <span><mark class="m-good">√ 佳句</mark></span>
           <span class="muted small">点击标注查看说明</span>
         </div>
         <article class="essay" id="essay-view">${renderMarked(body, marks)}</article>
       </div>
       <aside class="issues">
-        <h3>错别字 <small>${r.typos.length}</small></h3>
+        <h3>× 错别字 <small>${r.typos.length}</small></h3>
         ${
           r.typos.length
             ? `<ul class="issue-list">${r.typos
@@ -435,7 +452,7 @@ function renderResult() {
                 .join('')}</ul>`
             : '<p class="muted">没有发现错别字</p>'
         }
-        <h3>病句 <small>${r.sentences.length}</small></h3>
+        <h3>~~ 文句与标点 <small>${r.sentences.length}</small></h3>
         ${
           r.sentences.length
             ? `<ul class="issue-list">${r.sentences
@@ -448,9 +465,9 @@ function renderResult() {
                   </li>`
                 )
                 .join('')}</ul>`
-            : '<p class="muted">没有发现明显病句</p>'
+            : '<p class="muted">没有发现明显问题</p>'
         }
-        <h3>好句赏析 <small>${r.highlights.length}</small></h3>
+        <h3>√ 佳句 <small>${r.highlights.length}</small></h3>
         ${
           r.highlights.length
             ? `<ul class="issue-list">${r.highlights
@@ -539,12 +556,12 @@ function initResultInteractions() {
 function reportText({ title, result: r, meta, stats }) {
   const lines = [];
   lines.push(`【作文批改】${title ? `《${title}》` : ''}`);
-  lines.push(`总分：${r.total} / ${r.max}${r.level ? `（${r.level}）` : ''}　汉字 ${stats.hanzi}　${meta.grade}`);
+  lines.push(`总分：${r.total} / ${r.max}${r.level ? `（等级：${r.level}）` : ''}${r.topic && r.topic !== '切题' ? `【${r.topic}】` : ''}　汉字 ${stats.hanzi}　${meta.grade}`);
   r.scores.forEach((s) => lines.push(`· ${s.name}：${s.score}/${s.max}　${s.comment}`));
   lines.push('', `总评：${r.comment}`);
   if (r.typos.length) lines.push('', '错别字：' + r.typos.map((t) => `${t.wrong}→${t.correct}`).join('，'));
   if (r.sentences.length) {
-    lines.push('', '病句：');
+    lines.push('', '文句与标点：');
     r.sentences.forEach((s, i) => lines.push(`${i + 1}. ${s.original}\n   问题：${s.type || ''} ${s.problem || ''}\n   修改：${s.suggestion || ''}`));
   }
   if (r.strengths.length) lines.push('', '优点：', ...r.strengths.map((x) => `· ${x}`));

@@ -210,6 +210,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .level.high { background: var(--good-bg); }
 .level.mid { background: var(--bg); }
 .level.low { background: var(--sent-bg); }
+.level.bad { background: var(--typo-bg); }
+.score-side .level { margin-right: .4rem; }
+.guide-label { margin-top: 1rem; }
+#rubric-guide { font-size: .9rem; line-height: 1.7; }
 .bars { display: grid; gap: .6rem; margin-top: .6rem; }
 .bar-label { display: flex; justify-content: space-between; font-size: .9rem; }
 .bar-track { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }

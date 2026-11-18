@@ -19,10 +19,10 @@ const STYLE_TEXT = {
   encourage: '批改风格：鼓励为主，先肯定亮点，问题挑最重要的讲，语气温和，适合低年级学生。',
 };
 
-export const MARK_SYSTEM = `你是一位经验丰富的中学语文老师，擅长作文批改。你会收到一篇学生作文的文本、作文题目要求和评分标准，需要给出客观、具体、可操作的批改意见。
+export const MARK_SYSTEM = `你是一位经验丰富的小学华文老师，擅长作文批改。你会收到一篇学生作文的文本、作文题目要求和评分标准，需要给出客观、具体、可操作的批改意见。
 你必须只输出一个 JSON 对象，不要输出 JSON 以外的任何文字，也不要用代码块包裹。`;
 
-export function markUserText({ essay, title, requirement, grade, minWords, style, rubric, stats }) {
+export function markUserText({ essay, title, requirement, grade, minWords, style, rubric, guide, stats }) {
   const rubricText = rubric
     .map((r, i) => `${i + 1}. ${r.name}（满分 ${r.max} 分）：${r.desc || '无'}`)
     .join('\n');
@@ -34,9 +34,9 @@ export function markUserText({ essay, title, requirement, grade, minWords, style
 【本地统计】汉字约 ${stats.hanzi} 个，${stats.paragraphs} 个自然段
 【${STYLE_TEXT[style] || STYLE_TEXT.normal}】
 
-【评分标准】（总分 ${total} 分）
+【评分维度】（总分 ${total} 分）
 ${rubricText}
-
+${guide ? `\n【评分细则】（请严格按照以下等级说明给分）\n${guide}\n` : ''}
 【学生作文原文】
 ${essay}
 
@@ -45,9 +45,10 @@ ${essay}
   "scores": [ { "name": "维度名称，与评分标准一致", "score": 数字, "max": 数字, "comment": "该维度一两句评语" } ],
   "total": 数字（各维度得分之和）,
   "max": ${total},
-  "level": "档次，如：一类文 / 二类文 / 三类文 / 四类文",
+  "level": "等级：上 / 中上 / 中 / 中下 / 下（按评分细则；没有细则时自行概括）",
+  "topic": "切题情况，只能是：切题 / 不切合题意 / 离题",
   "typos": [ { "wrong": "错别字（原文中写错的字或词）", "correct": "正确写法", "context": "原文中包含该错字的连续 6～15 个字，必须与原文完全一致" } ],
-  "sentences": [ { "original": "原文中有问题的句子或片段，必须与原文完全一致", "type": "语病类型，如：成分残缺 / 搭配不当 / 语序不当 / 表意不明 / 标点错误 / 表达啰嗦", "problem": "问题说明", "suggestion": "修改后的句子" } ],
+  "sentences": [ { "original": "原文中有问题的句子或片段，必须与原文完全一致", "type": "问题类型，只能是：文句不通 / 上下文不连贯 / 遗漏字词 / 错用标点 / 遗漏标点 / 用词不当", "problem": "问题说明", "suggestion": "修改后的句子" } ],
   "highlights": [ { "original": "原文中写得好的句子，必须与原文完全一致", "reason": "好在哪里" } ],
   "strengths": [ "整体优点，2～4 条" ],
   "weaknesses": [ "主要不足，2～4 条" ],
@@ -57,5 +58,6 @@ ${essay}
 注意：
 - typos 只收真正的错别字，不要把正确的字当成错字；没有就给空数组。
 - original / context 字段必须原样摘自学生原文，不能改动一个字，否则无法在原文中标注。
-- 每个维度的 score 不能超过该维度的 max。`;
+- 每个维度的 score 不能超过该维度的 max，必须是整数。
+- 错别字和标点错误不另行扣分，只在「表达与结构」一项中斟酌扣分（除非评分细则另有规定）。`;
 }

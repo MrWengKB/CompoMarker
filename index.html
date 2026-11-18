@@ -55,13 +55,12 @@
       <div class="grid">
         <label>年级
           <select id="grade">
-            <option>小学三年级</option><option>小学四年级</option><option>小学五年级</option><option>小学六年级</option>
-            <option>初一</option><option>初二</option><option selected>初三</option>
-            <option>高一</option><option>高二</option><option>高三</option>
+            <option>三年级</option><option>四年级</option>
+            <option selected>五年级</option><option>六年级</option>
           </select>
         </label>
         <label>字数要求（不少于）
-          <input type="number" id="min-words" min="0" step="50" value="600">
+          <input type="number" id="min-words" min="0" step="50" placeholder="不限">
         </label>
         <label>批改风格
           <select id="style">
@@ -74,7 +73,7 @@
           <input type="text" id="title" placeholder="不填则使用原文第一行的标题">
         </label>
         <label class="span-3">写作要求 / 材料（可选）
-          <textarea id="requirement" rows="3" placeholder="例如：以“成长”为话题，写一篇记叙文，文体不限，不少于600字。"></textarea>
+          <textarea id="requirement" rows="3" placeholder="例如：根据三幅图写一篇作文，图一……图二……图三……（看图作文请把图意写在这里，方便判断是否切合图意）"></textarea>
         </label>
       </div>
 
@@ -87,6 +86,10 @@
         <tbody></tbody>
         <tfoot><tr><td><button type="button" class="link" id="rubric-add">+ 添加维度</button></td><td class="num" id="rubric-total"></td><td colspan="2"></td></tr></tfoot>
       </table>
+
+      <label class="guide-label">评分细则（等级说明与特别规定，会交给 AI 参考，可修改）
+        <textarea id="rubric-guide" rows="8"></textarea>
+      </label>
 
       <div class="row">
         <button type="button" class="btn primary" id="btn-mark">开始批改</button>
