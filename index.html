@@ -24,7 +24,7 @@
   <main class="container">
     <div id="key-banner" class="banner" hidden>
       还没有配置模型 API Key。<button type="button" class="link" id="banner-settings">去设置</button>
-      （Key 只保存在你自己的浏览器里）
+      （Key 只保存在你自己的浏览器里）<button type="button" class="link" id="banner-guide">第一次用？看设置指南</button>
     </div>
 
     <!-- 第一步：上传 -->
@@ -121,7 +121,10 @@
   <!-- 设置 -->
   <dialog id="dlg-settings">
     <form method="dialog" class="dlg">
-      <h2>模型设置</h2>
+      <div class="dlg-head">
+        <h2>模型设置</h2>
+        <button type="button" class="btn ghost small-btn" id="btn-guide">📖 设置指南</button>
+      </div>
       <label>服务商
         <select id="s-provider"></select>
       </label>
@@ -158,6 +161,74 @@
         <button value="save" class="btn primary" id="s-save">保存</button>
       </div>
     </form>
+  </dialog>
+
+
+  <!-- 设置指南 -->
+  <dialog id="dlg-guide">
+    <div class="dlg guide">
+      <h2>设置指南</h2>
+      <p class="hint">第一次使用只需要设置一次，之后这台设备上的浏览器会记住。选下面适合你的一种方式。</p>
+
+      <details open>
+        <summary>方式一：用学校的中转（推荐，最简单）</summary>
+        <p>如果负责的老师已经搭好了 Cloudflare 中转，你只需要向这位老师要两样东西：<b>Cloudflare 用户名</b>和<b>访问口令</b>。</p>
+        <ol>
+          <li>点右上角「设置」。</li>
+          <li>「服务商」选 <b>我的 Cloudflare 中转（Key 存在 Worker 里）</b>。</li>
+          <li>在 <code>https://compomarker.</code> 和 <code>.workers.dev/qwen-intl</code> 中间的格子里填 <b>Cloudflare 用户名</b>。</li>
+          <li>「访问口令」填拿到的口令。</li>
+          <li>勾选「在这台设备上记住」，点「保存」。</li>
+        </ol>
+        <p class="hint">口令请不要外传：知道口令的人都可以使用学校的额度。</p>
+      </details>
+
+      <details>
+        <summary>方式二：自己申请通义千问 Key</summary>
+        <ol>
+          <li>打开 <a href="https://modelstudio.console.alibabacloud.com" target="_blank" rel="noopener">Alibaba Cloud Model Studio（国际版）</a>，用邮箱注册账号（不需要中国手机号，一般需要绑定信用卡验证）。</li>
+          <li>按提示开通 Model Studio，地域选 <b>新加坡（Singapore）</b>。新用户有免费额度。</li>
+          <li>在「API Key」页面点「创建」，复制 <code>sk-</code> 开头的一串字符。</li>
+          <li>回到本网页，点「设置」，「服务商」选 <b>通义千问 · 国际版</b>，把 Key 粘贴到「API Key」，点「保存」。</li>
+        </ol>
+        <p class="hint">如果有中国大陆手机号，也可以在阿里云百炼（国内版）申请，服务商选「通义千问 · 国内版」。两边的 Key 不能混用。</p>
+      </details>
+
+      <details>
+        <summary>方式三：搭建学校的中转（给负责的老师）</summary>
+        <p>把 Key 存在 Cloudflare 里，其他老师只用口令，不会接触到真实 Key。</p>
+        <ol>
+          <li>先按「方式二」申请一个通义千问国际版 Key。</li>
+          <li>登录 <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare</a>（免费账号即可）→ Workers &amp; Pages → 创建 → 选「Hello World」，名字填 <code>compomarker</code> → 部署。</li>
+          <li>点「编辑代码」，把 <a href="https://github.com/MrWengKB/CompoMarker/blob/main/worker/relay.js" target="_blank" rel="noopener">worker/relay.js</a> 的内容整个粘贴进去 → 部署。</li>
+          <li>进入该 Worker 的「设置 → 变量和机密」，添加两个<b>机密（Secret）</b>：<code>ACCESS_CODE</code>（自己定的口令）和 <code>QWEN_INTL_KEY</code>（通义千问 Key）。</li>
+          <li>把 Cloudflare 用户名（Worker 地址里 <code>compomarker.</code> 和 <code>.workers.dev</code> 之间那段）和口令告诉其他老师，让他们按「方式一」设置。</li>
+        </ol>
+      </details>
+
+      <details>
+        <summary>常见问题</summary>
+        <dl class="faq">
+          <dt>提示「访问口令不正确」</dt>
+          <dd>口令填错了，注意大小写和多余的空格。</dd>
+          <dt>提示「此中转只允许指定网页调用」</dt>
+          <dd>请从 <a href="https://mrwengkb.github.io/CompoMarker/">https://mrwengkb.github.io/CompoMarker/</a> 打开本网页，不要用下载到本机的文件。</dd>
+          <dt>提示「无法连接到模型接口」</dt>
+          <dd>检查网络，以及中转地址里的用户名是否正确。</dd>
+          <dt>提示「模型不存在或已下线」</dt>
+          <dd>在「设置 → 高级设置」里点「恢复该服务商的默认模型和地址」后保存。</dd>
+          <dt>作文和 Key 会被保存到哪里？</dt>
+          <dd>Key 只存在你自己这台设备的浏览器里；作文内容直接发给模型服务商批改，历史记录也只存在本机。</dd>
+          <dt>换了电脑或浏览器怎么办？</dt>
+          <dd>每个浏览器需要重新设置一次。</dd>
+        </dl>
+      </details>
+
+      <div class="row end">
+        <button type="button" class="btn ghost" id="g-settings">去设置</button>
+        <button type="button" class="btn primary" id="g-close">知道了</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- 历史 -->

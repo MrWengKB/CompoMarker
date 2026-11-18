@@ -317,3 +317,19 @@ details[open] { display: grid; gap: .8rem; }
 .url-compose .url-fixed { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; color: var(--muted); }
 .url-compose input { flex: 1 1 7em; min-width: 7em; width: auto; }
 [hidden] { display: none !important; }
+
+.dlg-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.small-btn { padding: .3rem .7rem; font-size: .88rem; }
+#dlg-guide { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+.guide { gap: .6rem; }
+.guide details { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .9rem; }
+.guide details[open] { display: block; }
+.guide summary { color: var(--text); font-weight: 600; font-size: 1rem; }
+.guide ol { padding-left: 1.3rem; margin: .5rem 0; }
+.guide li { margin-bottom: .35rem; }
+.guide p { margin: .5rem 0; }
+.guide a { color: var(--primary); }
+.guide code { font-size: .88em; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 .3em; word-break: break-all; }
+.faq dt { font-weight: 600; margin-top: .6rem; }
+.faq dd { margin: .15rem 0 0; color: var(--muted); }
+#banner-guide { margin-left: .5rem; }

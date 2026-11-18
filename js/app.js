@@ -103,6 +103,16 @@ function initSettings() {
   };
   $('#btn-settings').addEventListener('click', open);
   $('#banner-settings').addEventListener('click', open);
+
+  const guide = $('#dlg-guide');
+  const openGuide = () => guide.showModal();
+  $('#btn-guide').addEventListener('click', openGuide);
+  $('#banner-guide').addEventListener('click', openGuide);
+  $('#g-close').addEventListener('click', () => guide.close());
+  $('#g-settings').addEventListener('click', () => {
+    guide.close();
+    if (!dlg.open) open();
+  });
   dlg.addEventListener('close', () => {
     if (dlg.returnValue !== 'save') return;
     state.settings = saveSettings({
