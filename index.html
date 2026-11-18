@@ -30,10 +30,14 @@
     <!-- 第一步：上传 -->
     <section class="card" id="step-upload">
       <h2><span class="step">1</span>上传作文（照片或 PDF）</h2>
+      <div class="upload-actions">
+        <button type="button" class="btn primary big" id="btn-camera">📷 拍照</button>
+        <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+      </div>
       <label class="dropzone" id="dropzone">
         <input type="file" id="file-input" accept="image/*,application/pdf,.pdf" multiple hidden>
-        <strong>点击拍照，或选择图片 / PDF</strong>
-        <span>也可以把文件拖到这里。一篇作文有多页时，按顺序选择多张图片，或上传一个多页 PDF。</span>
+        <strong>点击选择图片 / PDF</strong>
+        <span>也可以把文件拖到这里。一篇作文有多页时，可以连续拍几张，或按顺序选择多张图片，或上传一个多页 PDF。</span>
       </label>
       <ul class="thumbs" id="thumbs"></ul>
       <div class="row">
@@ -227,6 +231,21 @@
       <div class="row end">
         <button type="button" class="btn ghost" id="g-settings">去设置</button>
         <button type="button" class="btn primary" id="g-close">知道了</button>
+      </div>
+    </div>
+  </dialog>
+
+
+  <!-- 拍照（电脑摄像头） -->
+  <dialog id="dlg-camera">
+    <div class="dlg">
+      <h2>拍照</h2>
+      <p class="hint">把作文纸放平、对准，光线充足、不要有阴影。可以连续拍多页，按拍摄顺序排列。</p>
+      <video id="cam-video" playsinline autoplay muted></video>
+      <p class="status" id="cam-status"></p>
+      <div class="row end">
+        <button type="button" class="btn ghost" id="cam-close">完成</button>
+        <button type="button" class="btn primary" id="cam-shot">拍下这一页</button>
       </div>
     </div>
   </dialog>

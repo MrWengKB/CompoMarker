@@ -243,7 +243,70 @@ function renderThumbs() {
   $('#btn-ocr').disabled = state.images.length === 0;
 }
 
+/* 拍照：手机/平板直接调用系统相机；电脑用摄像头 */
+
+const isTouchDevice = () => window.matchMedia?.('(pointer: coarse)').matches;
+let camStream = null;
+
+function stopCamera() {
+  camStream?.getTracks().forEach((t) => t.stop());
+  camStream = null;
+}
+
+async function openCamera() {
+  if (isTouchDevice() || !navigator.mediaDevices?.getUserMedia) {
+    $('#camera-input').click();
+    return;
+  }
+  const dlg = $('#dlg-camera');
+  const status = $('#cam-status');
+  setStatus(status, '正在打开摄像头…', 'busy');
+  $('#cam-shot').disabled = true;
+  dlg.showModal();
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 2560 }, height: { ideal: 1920 } },
+      audio: false,
+    });
+    const video = $('#cam-video');
+    video.srcObject = camStream;
+    await video.play();
+    setStatus(status, '');
+    $('#cam-shot').disabled = false;
+  } catch (e) {
+    console.error(e);
+    setStatus(status, '无法打开摄像头：请在浏览器地址栏允许使用摄像头，或改用「选择图片」。', 'err');
+  }
+}
+
+function captureFrame() {
+  const video = $('#cam-video');
+  if (!video.videoWidth) return;
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(video.videoWidth, video.videoHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  state.images.push(canvasToImage(canvas, `拍照 ${state.images.length + 1}`));
+  renderThumbs();
+  setStatus($('#cam-status'), `已拍 ${state.images.length} 页，可以继续拍下一页，或点「完成」。`, 'ok');
+}
+
+function initCamera() {
+  const dlg = $('#dlg-camera');
+  $('#btn-camera').addEventListener('click', openCamera);
+  $('#cam-shot').addEventListener('click', captureFrame);
+  $('#cam-close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('close', stopCamera);
+  const camInput = $('#camera-input');
+  camInput.addEventListener('change', () => {
+    addFiles(camInput.files);
+    camInput.value = '';
+  });
+}
+
 function initUpload() {
+  initCamera();
   const input = $('#file-input');
   const dz = $('#dropzone');
   input.addEventListener('change', () => {
