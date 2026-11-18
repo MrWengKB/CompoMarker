@@ -171,8 +171,8 @@
       <p class="hint">第一次使用只需要设置一次，之后这台设备上的浏览器会记住。选下面适合你的一种方式。</p>
 
       <details open>
-        <summary>方式一：用学校的中转（推荐，最简单）</summary>
-        <p>如果负责的老师已经搭好了 Cloudflare 中转，你只需要向这位老师要两样东西：<b>Cloudflare 用户名</b>和<b>访问口令</b>。</p>
+        <summary>方式一：用同事分享的中转（最简单）</summary>
+        <p>如果有同事已经搭好了 Cloudflare 中转并愿意分享，你只需要向这位同事要两样东西：<b>Cloudflare 用户名</b>和<b>访问口令</b>。</p>
         <ol>
           <li>点右上角「设置」。</li>
           <li>「服务商」选 <b>我的 Cloudflare 中转（Key 存在 Worker 里）</b>。</li>
@@ -180,7 +180,7 @@
           <li>「访问口令」填拿到的口令。</li>
           <li>勾选「在这台设备上记住」，点「保存」。</li>
         </ol>
-        <p class="hint">口令请不要外传：知道口令的人都可以使用学校的额度。</p>
+        <p class="hint">口令请不要外传：用的是搭建者自己的额度，知道口令的人都能用。</p>
       </details>
 
       <details>
@@ -195,14 +195,14 @@
       </details>
 
       <details>
-        <summary>方式三：搭建学校的中转（给负责的老师）</summary>
-        <p>把 Key 存在 Cloudflare 里，其他老师只用口令，不会接触到真实 Key。</p>
+        <summary>方式三：自己搭一个中转（可以分享给同事）</summary>
+        <p>把 Key 存在自己的 Cloudflare 里（免费），在各台设备上只需填口令；想分享给同事时，也只给口令，不用给真实 Key。</p>
         <ol>
           <li>先按「方式二」申请一个通义千问国际版 Key。</li>
           <li>登录 <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare</a>（免费账号即可）→ Workers &amp; Pages → 创建 → 选「Hello World」，名字填 <code>compomarker</code> → 部署。</li>
           <li>点「编辑代码」，把 <a href="https://github.com/MrWengKB/CompoMarker/blob/main/worker/relay.js" target="_blank" rel="noopener">worker/relay.js</a> 的内容整个粘贴进去 → 部署。</li>
           <li>进入该 Worker 的「设置 → 变量和机密」，添加两个<b>机密（Secret）</b>：<code>ACCESS_CODE</code>（自己定的口令）和 <code>QWEN_INTL_KEY</code>（通义千问 Key）。</li>
-          <li>把 Cloudflare 用户名（Worker 地址里 <code>compomarker.</code> 和 <code>.workers.dev</code> 之间那段）和口令告诉其他老师，让他们按「方式一」设置。</li>
+          <li>自己按「方式一」设置。如果想分享给同事，把 Cloudflare 用户名（Worker 地址里 <code>compomarker.</code> 和 <code>.workers.dev</code> 之间那段）和口令告诉对方即可，用量会算在你的额度里。</li>
         </ol>
       </details>
 
