@@ -125,14 +125,22 @@
       <label>服务商
         <select id="s-provider"></select>
       </label>
-      <label>API Key
+      <label id="s-cf-wrap" hidden>中转地址（填你的 Cloudflare 用户名）
+        <span class="url-compose">
+          <span class="url-fixed">https://compomarker.</span>
+          <input type="text" id="s-cf-user" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="用户名">
+          <span class="url-fixed">.workers.dev/qwen-intl</span>
+        </span>
+        <small class="hint">用户名在 Cloudflare 控制台 Workers 页面上，Worker 地址里 compomarker. 和 .workers.dev 之间的那一段。</small>
+      </label>
+      <label><span id="s-key-label">API Key</span>
         <input type="password" id="s-key" autocomplete="off" spellcheck="false">
         <small id="s-key-hint" class="hint"></small>
       </label>
       <label class="check"><input type="checkbox" id="s-remember"> 在这台设备上记住 Key（不勾选则关闭页面后清除）</label>
       <details>
         <summary>高级设置</summary>
-        <label>接口地址（Base URL）
+        <label id="s-base-wrap">接口地址（Base URL）
           <input type="text" id="s-base" spellcheck="false" placeholder="使用默认地址">
           <small class="hint">如果浏览器直连被拦截，可以填自建的 Cloudflare Worker 中转地址。</small>
         </label>

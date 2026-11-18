@@ -52,13 +52,28 @@ function fillSettingsForm(provider) {
   $('#s-text').value = s.textModel || '';
   $('#s-key-hint').textContent = PROVIDERS[provider].keyHint;
   const p = PROVIDERS[provider];
-  $('#s-base').placeholder =
-    provider === 'worker'
-      ? '必填，例如 https://compomarker.你的账号.workers.dev/qwen-intl'
-      : p.baseURL || (p.kind === 'anthropic' ? '使用官方地址' : '必填');
-  // 需要手填接口地址时自动展开高级设置
-  if (!s.baseURL && p.kind === 'openai') document.querySelector('#dlg-settings details').open = true;
-  $('#s-key').placeholder = provider === 'worker' ? '访问口令' : '';
+  const isWorker = provider === 'worker';
+  $('#s-cf-wrap').hidden = !isWorker;
+  $('#s-base-wrap').hidden = isWorker;
+  $('#s-key-label').textContent = isWorker ? '访问口令' : 'API Key';
+  $('#s-key').placeholder = isWorker ? 'Worker 里设置的 ACCESS_CODE' : '';
+  $('#s-cf-user').value = isWorker ? cfUserFromURL(s.baseURL) : '';
+  $('#s-base').placeholder = p.baseURL || (p.kind === 'anthropic' ? '使用官方地址' : '必填');
+  // 自定义接口需要手填地址时自动展开高级设置
+  if (!isWorker && !s.baseURL && p.kind === 'openai') document.querySelector('#dlg-settings details').open = true;
+}
+
+const CF_PREFIX = 'https://compomarker.';
+const CF_SUFFIX = '.workers.dev/qwen-intl';
+
+function cfUserFromURL(url) {
+  const m = String(url || '').match(/^https:\/\/compomarker\.([^/]+?)\.workers\.dev/i);
+  return m ? m[1] : '';
+}
+
+function cfURL(user) {
+  const u = user.trim().replace(/^https?:\/\//, '').replace(/^compomarker\./, '').replace(/\.workers\.dev.*$/, '');
+  return u ? `${CF_PREFIX}${u}${CF_SUFFIX}` : '';
 }
 
 function initSettings() {
@@ -93,7 +108,7 @@ function initSettings() {
     state.settings = saveSettings({
       provider: sel.value,
       rememberKey: $('#s-remember').checked,
-      baseURL: $('#s-base').value.trim(),
+      baseURL: sel.value === 'worker' ? cfURL($('#s-cf-user').value) : $('#s-base').value.trim(),
       visionModel: $('#s-vision').value.trim(),
       textModel: $('#s-text').value.trim(),
       apiKey: $('#s-key').value.trim(),

@@ -309,3 +309,11 @@ details[open] { display: grid; gap: .8rem; }
   .result-grid { grid-template-columns: 1fr; }
   .issue-list li { break-inside: avoid; }
 }
+
+.url-compose {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .25rem;
+  color: var(--text); font-size: .95rem;
+}
+.url-compose .url-fixed { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; color: var(--muted); }
+.url-compose input { flex: 1 1 7em; min-width: 7em; width: auto; }
+[hidden] { display: none !important; }

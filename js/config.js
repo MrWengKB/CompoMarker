@@ -48,7 +48,7 @@ export const PROVIDERS = {
     baseURL: '',
     visionModel: 'qwen3.7-plus',
     textModel: 'qwen3.7-plus',
-    keyHint: '这里填 Worker 里设置的访问口令（ACCESS_CODE），不是模型的真实 Key。接口地址填 https://你的worker.workers.dev/qwen-intl',
+    keyHint: '这里填 Worker 里设置的访问口令（ACCESS_CODE），不是模型的真实 Key。',
   },
   custom: {
     name: '自定义（OpenAI 兼容接口 / 自建中转）',
