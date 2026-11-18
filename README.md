@@ -18,7 +18,8 @@
 
 | 服务商 | 识别模型（默认） | 批改模型（默认） |
 | --- | --- | --- |
-| 通义千问（阿里云百炼）**默认** | qwen-vl-max | qwen-max |
+| 通义千问 · 国际版（Model Studio，新加坡）**默认** | qwen-vl-max | qwen-max |
+| 通义千问 · 国内版（阿里云百炼） | qwen-vl-max | qwen-max |
 | 智谱 GLM | glm-4v-plus | glm-4-plus |
 | Claude（Anthropic） | claude-opus-5-5 | claude-opus-5-5 |
 | OpenAI | gpt-4o | gpt-4o |

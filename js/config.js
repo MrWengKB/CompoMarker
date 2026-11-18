@@ -2,8 +2,16 @@
 // API Key 只保存在用户自己的浏览器里（localStorage 或 sessionStorage），不会上传到仓库。
 
 export const PROVIDERS = {
+  'qwen-intl': {
+    name: '通义千问 · 国际版（Model Studio 新加坡）',
+    kind: 'openai',
+    baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    visionModel: 'qwen-vl-max',
+    textModel: 'qwen-max',
+    keyHint: '在 modelstudio.console.alibabacloud.com 创建 API Key（sk- 开头），无需国内手机号',
+  },
   qwen: {
-    name: '通义千问（阿里云百炼）',
+    name: '通义千问 · 国内版（阿里云百炼）',
     kind: 'openai',
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     visionModel: 'qwen-vl-max',
@@ -44,7 +52,7 @@ export const PROVIDERS = {
   },
 };
 
-export const DEFAULT_PROVIDER = 'qwen';
+export const DEFAULT_PROVIDER = 'qwen-intl';
 
 const SETTINGS_KEY = 'compomarker.settings.v1';
 const KEY_PREFIX = 'compomarker.key.';
