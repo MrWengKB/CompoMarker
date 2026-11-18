@@ -2,17 +2,23 @@
 
 const HANZI = /[㐀-䶿一-鿿豈-﫿]/g;
 
+// 去掉开头的「学生：…」「标题：…」行，返回 { student, title, body }
 export function splitTitle(text) {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
-  const idx = lines.findIndex((l) => l.trim());
-  if (idx !== -1) {
-    const m = lines[idx].trim().match(/^标题[:：]\s*(.*)$/);
-    if (m) {
-      lines.splice(idx, 1);
-      return { title: m[1].trim(), body: lines.join('\n').replace(/^\n+/, '') };
-    }
+  let student = '';
+  let title = '';
+  for (;;) {
+    const idx = lines.findIndex((l) => l.trim());
+    if (idx === -1) break;
+    const line = lines[idx].trim();
+    const ms = line.match(/^学生[:：]\s*(.*)$/);
+    const mt = line.match(/^标题[:：]\s*(.*)$/);
+    if (ms && !student) student = ms[1].trim();
+    else if (mt && !title) title = mt[1].trim();
+    else break;
+    lines.splice(idx, 1);
   }
-  return { title: '', body: lines.join('\n') };
+  return { student, title, body: lines.join('\n').replace(/^\n+/, '') };
 }
 
 export function textStats(body) {

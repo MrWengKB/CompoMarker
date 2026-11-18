@@ -341,3 +341,73 @@ details[open] { display: grid; gap: .8rem; }
 
 .raw { margin-top: .8rem; font-size: .85rem; }
 .raw pre { white-space: pre-wrap; word-break: break-all; max-height: 40vh; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .6rem; }
+
+/* ---------- 单篇 / 批量 切换 ---------- */
+.tabs { display: flex; gap: .4rem; margin-bottom: 1rem; }
+.tabs button {
+  font: inherit; padding: .5rem 1.1rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+}
+.tabs button[aria-selected="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+/* ---------- 批量批改 ---------- */
+.b-rubric { margin: .9rem 0; font-size: .9rem; }
+.b-rubric summary { cursor: pointer; color: var(--muted); }
+.b-rubric pre { white-space: pre-wrap; font: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .6rem; max-height: 40vh; overflow: auto; }
+.b-head, .b-row {
+  display: grid; align-items: center; gap: .6rem;
+  grid-template-columns: 2rem minmax(8rem, 1.1fr) 1.5fr 1.5fr 1.6rem;
+}
+.b-head { font-size: .82rem; color: var(--muted); padding: 0 .2rem .4rem; border-bottom: 1px solid var(--line); margin-top: 1rem; }
+.b-list { list-style: none; margin: 0; padding: 0; }
+.b-row { padding: .55rem .2rem; border-bottom: 1px solid var(--line); }
+.b-no { color: var(--muted); font-size: .9rem; text-align: center; }
+.b-name { display: flex; flex-direction: column; min-width: 0; }
+.b-name input { font: inherit; padding: .3rem .45rem; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); width: 100%; }
+.b-name input:hover, .b-name input:focus { border-color: var(--line); background: var(--bg); }
+.b-name small { font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: .45rem; }
+.b-cell { display: flex; align-items: center; gap: .45rem; min-width: 0; }
+.b-cell .small-btn { white-space: nowrap; flex: none; }
+.b-del { font-size: 1rem; text-decoration: none; }
+
+.pbar {
+  position: relative; flex: 1; min-width: 0; height: 2rem; padding: 0;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+  overflow: hidden; cursor: pointer; font: inherit; color: var(--text);
+}
+.pbar:hover { border-color: var(--muted); }
+.pfill { position: absolute; inset: 0 auto 0 0; width: 0; background: color-mix(in srgb, var(--primary) 28%, transparent); transition: width .3s; }
+.pbar.done .pfill { background: color-mix(in srgb, var(--ok) 30%, transparent); }
+.pbar.err { border-color: var(--accent); }
+.pbar.err .pfill { background: var(--accent-soft); width: 100% !important; }
+.pbar.run .pfill { background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); background-size: 200% 100%; animation: pmove 1.4s linear infinite; }
+@keyframes pmove { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.plabel { position: relative; font-size: .82rem; padding: 0 .5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.pbar.err .plabel { color: var(--accent); }
+
+.score-box {
+  flex: none; width: 3.6rem; height: 2rem; border-radius: 6px;
+  background: var(--line); display: grid; place-items: center;
+  font-size: .85rem; font-weight: 600; color: #fff;
+}
+.score-box:not(.done) { width: 2rem; }
+.score-box.done { background: var(--ok); }
+
+#dlg-essay { width: min(980px, calc(100vw - 24px)); }
+.essay-dlg #e-text { width: 100%; font: inherit; line-height: 1.8; margin-top: .5rem; }
+.essay-dlg #e-text[readonly] { opacity: .85; }
+#e-text-wrap summary { cursor: pointer; color: var(--muted); }
+
+@media (max-width: 720px) {
+  .b-head { display: none; }
+  .b-row {
+    grid-template-columns: 1.6rem 1fr 1.6rem;
+    grid-template-areas: "no name del" ". ocr ocr" ". mark mark";
+    row-gap: .4rem;
+  }
+  .b-no { grid-area: no; }
+  .b-name { grid-area: name; }
+  .b-ocr { grid-area: ocr; }
+  .b-mark { grid-area: mark; }
+  .b-del { grid-area: del; }
+}

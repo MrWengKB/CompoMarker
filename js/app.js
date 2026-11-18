@@ -1,12 +1,14 @@
 import { PROVIDERS, loadSettings, saveSettings, settingsFor, clearAllKeys } from './config.js';
-import { chat, extractJSON } from './providers.js';
 import { RUBRICS, DEFAULT_RUBRIC, cloneItems, rubricForGrade } from './rubrics.js';
-import { OCR_SYSTEM, ocrPageText, CONTINUE_MARK, MARK_SYSTEM, markUserText } from './prompts.js';
-import { splitTitle, textStats, findMarks, renderMarked, escapeHTML } from './analyze.js';
+import { splitTitle, textStats, escapeHTML } from './analyze.js';
+import {
+  MAX_IMAGE_SIDE, canvasToImage, prepareImage, pdfToImages, isPDF,
+  ocrPages, markEssay, buildMeta, readHistory, saveHistory, clearHistory,
+} from './core.js';
+import { mountResult, describe, reportText } from './result.js';
+import { initBatch } from './batch.js';
 
 const $ = (sel) => document.querySelector(sel);
-const HISTORY_KEY = 'compomarker.history.v1';
-const MAX_IMAGE_SIDE = 2000;
 
 const state = {
   settings: loadSettings(),
@@ -131,79 +133,6 @@ function initSettings() {
 
 /* ---------------- 第一步：图片 ---------------- */
 
-function readAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('图片无法读取'));
-    img.src = src;
-  });
-}
-
-function canvasToImage(canvas, name) {
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-  return { name, dataUrl, mediaType: 'image/jpeg', data: dataUrl.split(',')[1] };
-}
-
-// 压缩到长边不超过 MAX_IMAGE_SIDE，统一转 JPEG，减小上传体积
-async function prepareImage(file) {
-  const src = await readAsDataURL(file);
-  const img = await loadImage(src);
-  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.round(img.naturalWidth * scale);
-  const h = Math.round(img.naturalHeight * scale);
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, w, h);
-  ctx.drawImage(img, 0, 0, w, h);
-  return canvasToImage(canvas, file.name);
-}
-
-const MAX_PDF_PAGES = 10;
-let pdfjsLib = null;
-
-// PDF 每一页渲染成一张图片（扫描件、手机扫描 App 导出的 PDF 都可以）
-async function pdfToImages(file) {
-  if (!pdfjsLib) {
-    pdfjsLib = await import('./vendor/pdfjs/pdf.min.mjs');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
-  }
-  const task = pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
-  const doc = await task.promise;
-  const count = Math.min(doc.numPages, MAX_PDF_PAGES);
-  if (doc.numPages > MAX_PDF_PAGES) toast(`PDF 共 ${doc.numPages} 页，只取前 ${MAX_PDF_PAGES} 页`, 4000);
-  const out = [];
-  for (let i = 1; i <= count; i++) {
-    const page = await doc.getPage(i);
-    const base = page.getViewport({ scale: 1 });
-    const viewport = page.getViewport({ scale: MAX_IMAGE_SIDE / Math.max(base.width, base.height) });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(viewport.width);
-    canvas.height = Math.round(viewport.height);
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: ctx, canvas, viewport }).promise;
-    out.push(canvasToImage(canvas, `${file.name} 第${i}页`));
-  }
-  task.destroy().catch(() => {});
-  return out;
-}
-
-const isPDF = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
-
 async function addFiles(files) {
   const list = [...files].filter((f) => f.type.startsWith('image/') || isPDF(f));
   if (!list.length) return toast('请选择图片或 PDF 文件');
@@ -212,7 +141,7 @@ async function addFiles(files) {
     try {
       if (isPDF(f)) {
         setStatus(status, `正在读取 PDF：${f.name}…`, 'busy');
-        state.images.push(...(await pdfToImages(f)));
+        state.images.push(...(await pdfToImages(f, (m) => toast(m, 4000))));
         setStatus(status, '');
       } else {
         state.images.push(await prepareImage(f));
@@ -345,14 +274,6 @@ function showTextSteps() {
   updateStats();
 }
 
-// 把下一页的识别结果接到前面：续写的段落直接接上，新段落空一行
-function joinPage(prev, page) {
-  let t = page.trim();
-  if (!prev) return t;
-  if (t.startsWith(CONTINUE_MARK)) return prev.replace(/\s+$/, '') + t.slice(CONTINUE_MARK.length).trimStart();
-  return `${prev.replace(/\s+$/, '')}\n\n${t}`;
-}
-
 async function runOCR() {
   const btn = $('#btn-ocr');
   const status = $('#ocr-status');
@@ -374,30 +295,24 @@ async function runOCR() {
   };
   try {
     // 逐页识别：每次只上传一页，避免多页一起上传时请求过大被中断
-    for (let i = 0; i < n; i++) {
-      const pageLabel = n > 1 ? `第 ${i + 1} / ${n} 页` : '';
-      const text = await chat({
-        settings: state.settings,
-        model: state.settings.visionModel,
-        system: OCR_SYSTEM,
-        text: ocrPageText(i, n),
-        images: [pages[i]],
-        onDelta: (partial) => {
-          reveal();
-          const cur = partial.startsWith(CONTINUE_MARK) || CONTINUE_MARK.startsWith(partial) ? partial.slice(CONTINUE_MARK.length) : partial;
-          ta.value = done ? `${done}\n\n${cur}` : cur;
-          ta.scrollTop = ta.scrollHeight;
-          updateStats();
-          setStatus(status, `正在识别${pageLabel}…已出 ${ta.value.replace(/\s/g, '').length} 字`, 'busy');
-        },
-      });
-      done = joinPage(done, text);
-      ta.value = done;
-    }
+    done = await ocrPages({
+      settings: state.settings,
+      images: pages,
+      onProgress: ({ text, page }) => {
+        reveal();
+        ta.value = text;
+        ta.scrollTop = ta.scrollHeight;
+        updateStats();
+        const pageLabel = n > 1 ? `第 ${Math.min(page + 1, n)} / ${n} 页` : '';
+        setStatus(status, `正在识别${pageLabel}…已出 ${text.replace(/\s/g, '').length} 字`, 'busy');
+      },
+    });
+    ta.value = done;
     showTextSteps();
     setStatus(status, `识别完成（${n > 1 ? `${n} 页，` : ''}用时 ${Math.round((Date.now() - t0) / 1000)} 秒），请在下方核对原文${n > 1 ? '，特别留意换页处的分段' : ''}。`, 'ok');
     if (!shown) $('#step-text').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
+    done = e.partialText || '';
     if (done) ta.value = done;
     else if (shown) ta.value = before;
     const where = n > 1 && done ? `（前面的页已识别好并保留在下方）` : '';
@@ -412,11 +327,12 @@ async function runOCR() {
 /* ---------------- 第二步：原文统计 ---------------- */
 
 function updateStats() {
-  const { title, body } = splitTitle($('#essay-text').value);
+  const { student, title, body } = splitTitle($('#essay-text').value);
   const s = textStats(body);
   const min = Number($('#min-words').value) || 0;
   const short = min && s.hanzi < min;
   $('#stats').innerHTML = `
+    ${student ? `<span>学生：<b>${escapeHTML(student)}</b></span>` : ''}
     ${title ? `<span>标题：<b>${escapeHTML(title)}</b></span>` : ''}
     <span class="${short ? 'warn' : ''}">汉字 <b>${s.hanzi}</b>${short ? `（少于要求的 ${min} 字）` : ''}</span>
     <span>总字符 <b>${s.chars}</b></span>
@@ -488,13 +404,14 @@ function initRubric() {
 async function runMark() {
   const raw = $('#essay-text').value.trim();
   const status = $('#mark-status');
-  const { title: parsedTitle, body } = splitTitle(raw);
+  const { student, title: parsedTitle, body } = splitTitle(raw);
   if (textStats(body).hanzi < 20) return setStatus(status, '原文太短了，请先识别或粘贴作文。', 'err');
   const rubric = state.rubric.filter((r) => r.name.trim() && Number(r.max) > 0);
   if (!rubric.length) return setStatus(status, '请至少保留一个评分维度。', 'err');
 
-  const meta = {
+  const meta = buildMeta(state.settings, {
     title: $('#title').value.trim() || parsedTitle,
+    student,
     requirement: $('#requirement').value.trim(),
     grade: $('#grade').value,
     minWords: Number($('#min-words').value) || 0,
@@ -502,49 +419,31 @@ async function runMark() {
     rubric,
     guide: $('#rubric-guide').value.trim(),
     caps: RUBRICS[state.rubricKey]?.caps || {},
-    provider: PROVIDERS[state.settings.provider].name,
-    model: state.settings.textModel,
-    time: Date.now(),
-  };
+  });
   const stats = textStats(body);
   const btn = $('#btn-mark');
   btn.disabled = true;
   setStatus(status, '正在批改，通常需要 20～60 秒…', 'busy');
   const rawBox = $('#mark-raw');
   rawBox.hidden = true;
-  let lastOut = '';
   try {
-    let parsed = null;
-    // 最多试两次：第一次解析失败或结果被截断得太厉害时，自动重新请求一次
-    for (let attempt = 1; attempt <= 2 && !parsed; attempt++) {
-      if (attempt > 1) setStatus(status, '上一次结果格式有问题，正在自动重试…', 'busy');
-      lastOut = await chat({
-        settings: state.settings,
-        model: state.settings.textModel,
-        system: MARK_SYSTEM,
-        text: markUserText({ essay: body, stats, ...meta }),
-        json: true,
-        onDelta: (partial) => setStatus(status, `正在批改${attempt > 1 ? '（重试）' : ''}…已生成 ${partial.length} 字`, 'busy'),
-      });
-      try {
-        const p = extractJSON(lastOut);
-        const usable = Array.isArray(p.value?.scores) && p.value.scores.length > 0;
-        if (usable && (!p.truncated || attempt === 2)) parsed = p;
-      } catch (err) {
-        if (attempt === 2) throw err;
-      }
-    }
-    if (!parsed) throw new Error('批改结果不完整。');
-    const result = normalizeResult(parsed.value, rubric, meta.caps);
-    state.last = { body, title: meta.title, result, meta, stats };
+    const { result, truncated } = await markEssay({
+      settings: state.settings,
+      body,
+      meta,
+      stats,
+      onProgress: ({ chars, attempt }) =>
+        setStatus(status, `正在批改${attempt > 1 ? '（上次格式有问题，自动重试中）' : ''}…已生成 ${chars} 字`, 'busy'),
+    });
+    state.last = { body, title: meta.title, student, result, meta, stats };
     renderResult();
     saveHistory(state.last);
-    setStatus(status, parsed.truncated ? '批改完成，但结果被截断，部分内容可能缺失，可以点「重新批改」。' : '批改完成。', parsed.truncated ? 'err' : 'ok');
+    setStatus(status, truncated ? '批改完成，但结果被截断，部分内容可能缺失，可以点「重新批改」。' : '批改完成。', truncated ? 'err' : 'ok');
     $('#step-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     setStatus(status, `${e.message || String(e)}已自动重试过一次，可以再点「开始批改」试试。`, 'err');
-    if (lastOut) {
-      rawBox.querySelector('pre').textContent = lastOut;
+    if (e.raw) {
+      rawBox.querySelector('pre').textContent = e.raw;
       rawBox.hidden = false;
     }
   } finally {
@@ -552,162 +451,20 @@ async function runMark() {
   }
 }
 
-function normalizeResult(r, rubric, caps = {}) {
-  const arr = (x) => (Array.isArray(x) ? x : []);
-  const topic = ['切题', '不切合题意', '离题'].includes(r.topic) ? r.topic : '切题';
-  const cap = caps[topic] || {};
-  const scores = arr(r.scores).map((s, i) => {
-    const name = s.name || rubric[i]?.name || `维度${i + 1}`;
-    const max = Number(rubric.find((x) => x.name === name)?.max) || Number(s.max) || Number(rubric[i]?.max) || 0;
-    let score = Math.max(0, Math.min(max || Infinity, Number(s.score) || 0));
-    let comment = s.comment || '';
-    // 切题规定：不切合题意 / 离题时按评分准则封顶
-    if (name in cap && score > cap[name]) {
-      score = cap[name];
-      comment = `${comment}（${topic}，本项以 ${cap[name]} 分为上限）`;
-    }
-    return { name, score, max, comment };
-  });
-  const total = scores.reduce((a, s) => a + s.score, 0);
-  const max = scores.reduce((a, s) => a + s.max, 0) || rubric.reduce((a, s) => a + Number(s.max), 0);
-  return {
-    scores,
-    total: Math.round(total * 10) / 10,
-    max,
-    level: r.level || '',
-    topic,
-    typos: arr(r.typos).filter((t) => t && t.wrong),
-    sentences: arr(r.sentences).filter((s) => s && s.original),
-    highlights: arr(r.highlights).filter((s) => s && s.original),
-    strengths: arr(r.strengths),
-    weaknesses: arr(r.weaknesses),
-    suggestions: arr(r.suggestions),
-    comment: r.comment || '',
-  };
-}
-
 /* ---------------- 结果展示 ---------------- */
 
 function renderResult() {
-  const { body, title, result: r, meta, stats } = state.last;
-  const marks = findMarks(body, r);
-  const pct = r.max ? r.total / r.max : 0;
-  const tone = pct >= 0.85 ? 'high' : pct >= 0.7 ? 'mid' : pct >= 0.6 ? 'low' : 'bad';
-  const list = (items) => (items.length ? `<ul>${items.map((x) => `<li>${escapeHTML(x)}</li>`).join('')}</ul>` : '<p class="muted">无</p>');
-  const notFound = (x) => (x._found ? '' : '<span class="nf" title="未能在原文中定位">未定位</span>');
-
-  $('#result').innerHTML = `
-    <div class="score-summary">
-      <div class="score-ring ${tone}" style="--p:${Math.round(pct * 100)}">
-        <span class="score-num">${r.total}</span><span class="score-max">/ ${r.max}</span>
-      </div>
-      <div class="score-side">
-        ${title ? `<h3 class="essay-title">《${escapeHTML(title)}》</h3>` : ''}
-        ${r.level ? `<span class="level ${tone}">等级：${escapeHTML(r.level)}</span>` : ''}
-        ${r.topic && r.topic !== '切题' ? `<span class="level bad">${r.topic === '离题' ? '#' : 'Δ'} ${escapeHTML(r.topic)}</span>` : ''}
-        <p class="muted small">${escapeHTML(meta.grade)} · 汉字 ${stats.hanzi}${meta.minWords && stats.hanzi < meta.minWords ? `（<span class="warn">不足 ${meta.minWords}</span>）` : ''} · ${stats.paragraphs} 段 · 错别字 ${r.typos.length} · 文句问题 ${r.sentences.length}</p>
-        <div class="bars">
-          ${r.scores
-            .map(
-              (s) => `<div class="bar">
-                <div class="bar-label"><span>${escapeHTML(s.name)}</span><b>${s.score} / ${s.max}</b></div>
-                <div class="bar-track"><div class="bar-fill" style="width:${s.max ? (s.score / s.max) * 100 : 0}%"></div></div>
-                ${s.comment ? `<p class="bar-comment">${escapeHTML(s.comment)}</p>` : ''}
-              </div>`
-            )
-            .join('')}
-        </div>
-      </div>
-    </div>
-
-    <div class="comment-box">
-      <h3>总评</h3>
-      <p>${escapeHTML(r.comment)}</p>
-    </div>
-
-    <div class="result-grid">
-      <div>
-        <div class="legend">
-          <span><mark class="m-typo">× 错别字</mark></span>
-          <span><mark class="m-sentence">~~ 文句/标点问题</mark></span>
-          <span><mark class="m-good">√ 佳句</mark></span>
-          <span class="muted small">点击标注查看说明</span>
-        </div>
-        <article class="essay" id="essay-view">${renderMarked(body, marks)}</article>
-      </div>
-      <aside class="issues">
-        <h3>× 错别字 <small>${r.typos.length}</small></h3>
-        ${
-          r.typos.length
-            ? `<ul class="issue-list">${r.typos
-                .map(
-                  (t, i) => `<li data-kind="typo" data-index="${i}">
-                    <span class="wrong">${escapeHTML(t.wrong)}</span> → <span class="right">${escapeHTML(t.correct)}</span> ${notFound(t)}
-                  </li>`
-                )
-                .join('')}</ul>`
-            : '<p class="muted">没有发现错别字</p>'
-        }
-        <h3>~~ 文句与标点 <small>${r.sentences.length}</small></h3>
-        ${
-          r.sentences.length
-            ? `<ul class="issue-list">${r.sentences
-                .map(
-                  (s, i) => `<li data-kind="sentence" data-index="${i}">
-                    ${s.type ? `<span class="tag">${escapeHTML(s.type)}</span>` : ''} ${notFound(s)}
-                    <p class="orig">${escapeHTML(s.original)}</p>
-                    ${s.problem ? `<p class="muted small">${escapeHTML(s.problem)}</p>` : ''}
-                    ${s.suggestion ? `<p class="fix">改：${escapeHTML(s.suggestion)}</p>` : ''}
-                  </li>`
-                )
-                .join('')}</ul>`
-            : '<p class="muted">没有发现明显问题</p>'
-        }
-        <h3>√ 佳句 <small>${r.highlights.length}</small></h3>
-        ${
-          r.highlights.length
-            ? `<ul class="issue-list">${r.highlights
-                .map(
-                  (s, i) => `<li data-kind="good" data-index="${i}">
-                    <p class="orig">${escapeHTML(s.original)}</p>
-                    <p class="muted small">${escapeHTML(s.reason)}</p>
-                  </li>`
-                )
-                .join('')}</ul>`
-            : '<p class="muted">无</p>'
-        }
-      </aside>
-    </div>
-
-    <div class="three-col">
-      <div><h3>优点</h3>${list(r.strengths)}</div>
-      <div><h3>不足</h3>${list(r.weaknesses)}</div>
-      <div><h3>修改建议</h3>${list(r.suggestions)}</div>
-    </div>
-    <p class="muted small">由 ${escapeHTML(meta.provider)}（${escapeHTML(meta.model)}）批改于 ${new Date(meta.time).toLocaleString('zh-CN')}。AI 评分仅供参考。</p>
-  `;
+  mountResult($('#result'), state.last);
   show('#step-result');
-}
-
-function describe(kind, index) {
-  const r = state.last.result;
-  if (kind === 'typo') {
-    const t = r.typos[index];
-    return `<b>错别字</b>「${escapeHTML(t.wrong)}」应为「${escapeHTML(t.correct)}」`;
-  }
-  if (kind === 'sentence') {
-    const s = r.sentences[index];
-    return `<b>${escapeHTML(s.type || '病句')}</b>${s.problem ? `<p>${escapeHTML(s.problem)}</p>` : ''}${s.suggestion ? `<p class="fix">改：${escapeHTML(s.suggestion)}</p>` : ''}`;
-  }
-  const g = r.highlights[index];
-  return `<b>好句</b><p>${escapeHTML(g.reason)}</p>`;
 }
 
 function initResultInteractions() {
   const pop = $('#popover');
   const hide = () => (pop.hidden = true);
   const openFor = (mark) => {
-    pop.innerHTML = describe(mark.dataset.kind, Number(mark.dataset.index));
+    const root = mark.closest('[data-result-root]');
+    if (!root?._entry) return;
+    pop.innerHTML = describe(root._entry, mark.dataset.kind, Number(mark.dataset.index));
     pop.hidden = false;
     const rect = mark.getBoundingClientRect();
     const w = Math.min(320, window.innerWidth - 32);
@@ -717,11 +474,12 @@ function initResultInteractions() {
     pop.style.top = `${rect.bottom + window.scrollY + 8}px`;
   };
   document.addEventListener('click', (ev) => {
-    const mark = ev.target.closest('#essay-view mark');
+    const mark = ev.target.closest('.essay-view mark');
     if (mark) return openFor(mark);
     const li = ev.target.closest('.issue-list li');
     if (li) {
-      const m = document.querySelector(`#essay-view mark[data-kind="${li.dataset.kind}"][data-index="${li.dataset.index}"]`);
+      const root = li.closest('[data-result-root]');
+      const m = root?.querySelector(`.essay-view mark[data-kind="${li.dataset.kind}"][data-index="${li.dataset.index}"]`);
       if (m) {
         m.scrollIntoView({ behavior: 'smooth', block: 'center' });
         m.classList.add('flash');
@@ -733,7 +491,7 @@ function initResultInteractions() {
   });
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') hide();
-    if (ev.key === 'Enter' && ev.target.matches?.('#essay-view mark')) openFor(ev.target);
+    if (ev.key === 'Enter' && ev.target.matches?.('.essay-view mark')) openFor(ev.target);
   });
   window.addEventListener('resize', hide);
 
@@ -749,34 +507,7 @@ function initResultInteractions() {
   });
 }
 
-function reportText({ title, result: r, meta, stats }) {
-  const lines = [];
-  lines.push(`【作文批改】${title ? `《${title}》` : ''}`);
-  lines.push(`总分：${r.total} / ${r.max}${r.level ? `（等级：${r.level}）` : ''}${r.topic && r.topic !== '切题' ? `【${r.topic}】` : ''}　汉字 ${stats.hanzi}　${meta.grade}`);
-  r.scores.forEach((s) => lines.push(`· ${s.name}：${s.score}/${s.max}　${s.comment}`));
-  lines.push('', `总评：${r.comment}`);
-  if (r.typos.length) lines.push('', '错别字：' + r.typos.map((t) => `${t.wrong}→${t.correct}`).join('，'));
-  if (r.sentences.length) {
-    lines.push('', '文句与标点：');
-    r.sentences.forEach((s, i) => lines.push(`${i + 1}. ${s.original}\n   问题：${s.type || ''} ${s.problem || ''}\n   修改：${s.suggestion || ''}`));
-  }
-  if (r.strengths.length) lines.push('', '优点：', ...r.strengths.map((x) => `· ${x}`));
-  if (r.weaknesses.length) lines.push('', '不足：', ...r.weaknesses.map((x) => `· ${x}`));
-  if (r.suggestions.length) lines.push('', '修改建议：', ...r.suggestions.map((x, i) => `${i + 1}. ${x}`));
-  return lines.join('\n');
-}
-
 /* ---------------- 历史记录 ---------------- */
-
-function readHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
-}
-
-function saveHistory(entry) {
-  const list = readHistory();
-  list.unshift(entry);
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 30))); } catch { /* 存储满或不可用 */ }
-}
 
 function initHistory() {
   const dlg = $('#dlg-history');
@@ -787,7 +518,7 @@ function initHistory() {
       ? list
           .map(
             (h, i) => `<li><button type="button" class="history-item" data-i="${i}">
-              <b>${escapeHTML(h.title || h.body.slice(0, 12) + '…')}</b>
+              <b>${escapeHTML([h.student, h.title].filter(Boolean).join(' · ') || h.body.slice(0, 12) + '…')}</b>
               <span>${h.result.total} / ${h.result.max}</span>
               <small class="muted">${new Date(h.meta.time).toLocaleString('zh-CN')}</small>
             </button></li>`
@@ -801,7 +532,7 @@ function initHistory() {
   });
   $('#h-close').addEventListener('click', () => dlg.close());
   $('#h-clear').addEventListener('click', () => {
-    try { localStorage.removeItem(HISTORY_KEY); } catch { /* ignore */ }
+    clearHistory();
     render();
   });
   ul.addEventListener('click', (ev) => {
@@ -809,12 +540,28 @@ function initHistory() {
     if (!b) return;
     const h = readHistory()[Number(b.dataset.i)];
     state.last = h;
-    $('#essay-text').value = (h.title ? `标题：${h.title}\n\n` : '') + h.body;
+    showView('single');
+    $('#essay-text').value = (h.student ? `学生：${h.student}\n` : '') + (h.title ? `标题：${h.title}\n\n` : '') + h.body;
     showTextSteps();
     renderResult();
     dlg.close();
     $('#step-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+}
+
+/* ---------------- 单篇 / 批量切换 ---------------- */
+
+function showView(name) {
+  $('#view-single').hidden = name !== 'single';
+  $('#view-batch').hidden = name !== 'batch';
+  document.querySelectorAll('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === name)));
+  const hash = name === 'batch' ? '#batch' : '';
+  if (location.hash !== hash) history.replaceState(null, '', hash || location.pathname + location.search);
+}
+
+function initTabs() {
+  document.querySelectorAll('.tabs [data-view]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
+  showView(location.hash === '#batch' ? 'batch' : 'single');
 }
 
 /* ---------------- 启动 ---------------- */
@@ -824,6 +571,8 @@ initUpload();
 initRubric();
 initResultInteractions();
 initHistory();
+initTabs();
+initBatch({ getSettings: () => state.settings, toast });
 updateBanner();
 $('#essay-text').addEventListener('input', updateStats);
 $('#min-words').addEventListener('input', updateStats);

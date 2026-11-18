@@ -27,6 +27,12 @@
       （Key 只保存在你自己的浏览器里）<button type="button" class="link" id="banner-guide">第一次用？看设置指南</button>
     </div>
 
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-view="single" aria-selected="true">单篇批改</button>
+      <button type="button" role="tab" data-view="batch" aria-selected="false">批量批改</button>
+    </nav>
+
+    <div id="view-single">
     <!-- 第一步：上传 -->
     <section class="card" id="step-upload">
       <h2><span class="step">1</span>上传作文（照片或 PDF）</h2>
@@ -119,6 +125,65 @@
       </div>
       <div id="result"></div>
     </section>
+    </div>
+
+    <!-- 批量批改 -->
+    <div id="view-batch" hidden>
+      <section class="card">
+        <h2>批量批改</h2>
+        <p class="hint">一篇作文一个文件（图片或 PDF），可以一次选择多个文件，也可以上传一个 zip 压缩包。上传后自动识别文字（同时处理 2 篇）；点「全部开始批改」后才会开始批改。</p>
+        <div class="grid">
+          <label>年级
+            <select id="b-grade">
+              <option>三年级</option><option>四年级</option>
+              <option selected>五年级</option><option>六年级</option>
+            </select>
+          </label>
+          <label>字数要求（不少于）
+            <input type="number" id="b-min-words" min="0" step="50" placeholder="不限">
+          </label>
+          <label>批改风格
+            <select id="b-style">
+              <option value="strict">严格（按考试标准）</option>
+              <option value="normal" selected>适中</option>
+              <option value="encourage">鼓励为主</option>
+            </select>
+          </label>
+          <label class="span-3">作文题目
+            <input type="text" id="b-title" placeholder="全班同一题目时填写；不填则使用各篇原文里的标题">
+          </label>
+          <label class="span-3">写作要求 / 材料（可选）
+            <textarea id="b-requirement" rows="2" placeholder="看图作文请把图意写在这里，方便判断是否切合图意"></textarea>
+          </label>
+        </div>
+        <details class="b-rubric">
+          <summary>评分准则：<span id="b-rubric-label"></span>（按年级自动选择，点开查看细则）</summary>
+          <pre id="b-rubric-guide"></pre>
+        </details>
+        <label class="dropzone" id="b-dropzone">
+          <input type="file" id="b-file-input" accept="image/*,application/pdf,.pdf,.zip,application/zip" multiple hidden>
+          <strong>点击选择多个文件 / zip</strong>
+          <span>每个文件算一篇作文（多页作文请合成一个 PDF）。也可以把文件拖到这里。</span>
+        </label>
+        <p class="status" id="b-status"></p>
+      </section>
+
+      <section class="card" id="b-list-card" hidden>
+        <div class="result-head">
+          <h2>作文列表 <small class="muted" id="b-count"></small></h2>
+          <div class="row">
+            <button type="button" class="btn primary" id="b-mark-all">全部开始批改</button>
+            <button type="button" class="btn ghost" id="b-export">导出成绩表</button>
+            <button type="button" class="btn ghost" id="b-export-reports">导出全部报告</button>
+            <button type="button" class="btn ghost danger" id="b-clear">清空列表</button>
+          </div>
+        </div>
+        <div class="b-head" aria-hidden="true">
+          <span>#</span><span>学生</span><span>识别（点击查看文字）</span><span>批改（点击查看作文）</span><span></span>
+        </div>
+        <ol class="b-list" id="b-list"></ol>
+      </section>
+    </div>
   </main>
 
   <footer class="footer no-print">
@@ -254,11 +319,39 @@
     </div>
   </dialog>
 
+
+  <!-- 批量：单篇详情 -->
+  <dialog id="dlg-essay">
+    <div class="dlg essay-dlg">
+      <div class="dlg-head">
+        <h2 id="e-title"></h2>
+        <button type="button" class="btn ghost small-btn" id="e-close">关闭</button>
+      </div>
+      <p class="status" id="e-status"></p>
+      <div id="e-result"></div>
+      <details id="e-text-wrap" open>
+        <summary>识别出的原文</summary>
+        <textarea id="e-text" rows="14"></textarea>
+        <div class="stats" id="e-stats"></div>
+      </details>
+      <details id="e-raw" class="raw" hidden>
+        <summary>查看模型的原始输出（排查问题用）</summary>
+        <pre></pre>
+      </details>
+      <div class="row end">
+        <button type="button" class="btn ghost" id="e-reocr">重新识别</button>
+        <button type="button" class="btn ghost" id="e-save">保存修改</button>
+        <button type="button" class="btn ghost" id="e-copy">复制报告</button>
+        <button type="button" class="btn primary" id="e-mark">批改这一篇</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- 历史 -->
   <dialog id="dlg-history">
     <div class="dlg">
       <h2>历史记录</h2>
-      <p class="hint">只保存在本机浏览器，最多 30 条。</p>
+      <p class="hint">只保存在本机浏览器，最多 100 条。</p>
       <ul class="history" id="history-list"></ul>
       <div class="row end">
         <button type="button" class="btn ghost danger" id="h-clear">清空</button>

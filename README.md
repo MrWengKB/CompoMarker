@@ -14,6 +14,16 @@
 
 没有照片时，也可以直接粘贴作文文本。
 
+### 批量批改（一个班一起改）
+
+切换到「批量批改」：
+
+1. 一篇作文一个文件（图片或 PDF，多页作文合成一个 PDF），一次多选上传，或上传一个 zip 压缩包。
+2. 上传后自动识别文字，每篇有一条「识别」进度条，点进度条可以随时查看已识别的文字；识别完成后「保存文字」可下载 txt。
+3. 填好年级、题目等，点「全部开始批改」。同时只处理 2 篇，避免触发接口频率限制。批改完成后右边显示分数，点「批改」进度条查看这一篇的完整结果。
+4. 学生姓名默认取文件名，识别到作文纸上的姓名时自动替换，也可以直接修改。
+5. 「导出成绩表」得到 CSV（Excel 可直接打开），「导出全部报告」得到所有评语的 txt。
+
 ## 模型服务商
 
 | 服务商 | 识别模型（默认） | 批改模型（默认） |
@@ -65,12 +75,16 @@ python3 -m http.server 8000
 ```
 index.html        页面
 style.css         样式（支持深色模式、手机、打印）
-js/app.js         页面流程与结果展示
+js/app.js         单篇页面流程
+js/batch.js       批量批改
+js/core.js        识别、批改等共用流程
+js/result.js      批改结果展示
 js/config.js      服务商预设、设置与 Key 的本地存储
 js/providers.js   模型调用（OpenAI 兼容接口 / Claude SDK）
 js/prompts.js     识别与批改提示词
 js/rubrics.js     评分标准预设
 js/analyze.js     本地字数统计、原文标注
 js/vendor/pdfjs/  PDF.js（读取 PDF，Apache-2.0）
+js/vendor/fflate/ fflate（解压 zip，MIT）
 worker/relay.js   可选的 Cloudflare Worker 中转
 ```
