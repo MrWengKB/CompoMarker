@@ -1,11 +1,21 @@
 // 批改结果的展示（单篇和批量共用）
 import { findMarks, renderMarked, escapeHTML } from './analyze.js';
+import { mountAnnotations } from './annotate.js';
 
 // 把结果渲染进容器，并记住对应的数据，供点击标注时查找
 export function mountResult(el, entry) {
   el.innerHTML = resultHTML(entry);
   el.dataset.resultRoot = '1';
   el._entry = entry;
+  const slot = el.querySelector('.annot-slot');
+  if (slot) {
+    try {
+      mountAnnotations(slot, entry);
+    } catch (e) {
+      console.error('原图批注失败', e);
+      slot.hidden = true;
+    }
+  }
 }
 
 export function resultHTML(entry) {
@@ -44,6 +54,8 @@ export function resultHTML(entry) {
       <h3>总评</h3>
       <p>${escapeHTML(r.comment)}</p>
     </div>
+
+    <section class="annot-slot" hidden></section>
 
     <div class="result-grid">
       <div>

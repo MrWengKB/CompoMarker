@@ -1,6 +1,8 @@
 // 单篇和批量共用的核心流程：读取图片 / PDF、逐页识别、批改并整理结果。
 import { chat, extractJSON } from './providers.js';
-import { OCR_SYSTEM, ocrPageText, CONTINUE_MARK, MARK_SYSTEM, markUserText } from './prompts.js';
+import { OCR_SYSTEM, ocrPageText, ocrGridPageText, CONTINUE_MARK, MARK_SYSTEM, markUserText } from './prompts.js';
+import { detectGrid } from './grid.js';
+import { layoutPage, assemble } from './layout.js';
 import { PROVIDERS } from './config.js';
 
 export const MAX_IMAGE_SIDE = 2000;
@@ -93,29 +95,42 @@ export function joinPage(prev, page) {
 }
 
 // 逐页识别（每次只上传一页，避免请求过大）。
+// 方格纸的页先在本地检测格子，再让模型按方格逐行转写，以便把批改符号画回原图。
 // onProgress({ text, page, pages, pageChars })：text 是目前为止的全文
+// 返回 { text, layout }；layout 为 null 表示没有检测到方格
 export async function ocrPages({ settings, images, onProgress }) {
   const n = images.length;
+  const pages = [];
   let done = '';
   for (let i = 0; i < n; i++) {
+    let grid = null;
+    try {
+      grid = await detectGrid(images[i].dataUrl);
+      if (grid && !grid.rows.some((r) => r.filled)) grid = null;
+    } catch (e) {
+      console.warn('方格检测失败', e);
+    }
     const pageText = await chat({
       settings,
       model: settings.visionModel,
       system: OCR_SYSTEM,
-      text: ocrPageText(i, n),
+      text: grid ? ocrGridPageText(i, n, grid.rows) : ocrPageText(i, n),
       images: [images[i]],
       onDelta: (partial) => {
-        const cur = partial.startsWith(CONTINUE_MARK) || CONTINUE_MARK.startsWith(partial) ? partial.slice(CONTINUE_MARK.length) : partial;
+        const cur = !grid && (partial.startsWith(CONTINUE_MARK) || CONTINUE_MARK.startsWith(partial)) ? partial.slice(CONTINUE_MARK.length) : partial;
         onProgress?.({ text: done ? `${done}\n\n${cur}` : cur, page: i, pages: n, pageChars: cur.length });
       },
     }).catch((e) => {
       e.partialText = done;
       throw e;
     });
-    done = joinPage(done, pageText);
+    pages.push(grid ? { grid, layout: layoutPage(grid, pageText), dataUrl: images[i].dataUrl } : { text: pageText, dataUrl: images[i].dataUrl });
+    done = assemble(pages).text;
     onProgress?.({ text: done, page: i + 1, pages: n, pageChars: 0 });
   }
-  return done;
+  const { text, map } = assemble(pages);
+  const layout = pages.some((p) => p.grid) ? { text, map, pages } : null;
+  return { text, layout };
 }
 
 /* ---------------- 批改 ---------------- */
@@ -230,7 +245,7 @@ export function readHistory() {
 export function saveHistory(entry) {
   const list = readHistory();
   list.unshift(entry);
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); } catch { /* 存储满或不可用 */ }
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX), (k, v) => (k.startsWith('_') ? undefined : v))); } catch { /* 存储满或不可用 */ }
 }
 
 export function clearHistory() {

@@ -411,3 +411,24 @@ details[open] { display: grid; gap: .8rem; }
   .b-mark { grid-area: mark; }
   .b-del { grid-area: del; }
 }
+
+/* ---------- 原图批注 ---------- */
+.annot-slot { margin: 1.2rem 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+.annot-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; }
+.annot-head h3 { margin: 0; }
+.annot-head .row { margin: 0; }
+.annot-warn { background: color-mix(in srgb, var(--warn) 12%, transparent); border: 1px solid var(--warn); border-radius: 8px; padding: .5rem .8rem; font-size: .88rem; margin: .5rem 0; }
+.annot-warn ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+.annot-pages { display: grid; gap: 1rem; margin-top: .6rem; }
+.annot-page { margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+.annot-svg { display: block; width: 100%; height: auto; touch-action: none; user-select: none; }
+.annot-mark { cursor: grab; }
+.annot-mark.dragging { cursor: grabbing; }
+.annot-mark .hit { fill: transparent; }
+.annot-mark:hover .hit, .annot-mark.dragging .hit { fill: rgba(208, 2, 27, .08); }
+.annot-mark .handle { fill: #fff; stroke: #d0021b; stroke-width: 2; opacity: 0; cursor: ew-resize; }
+.annot-mark:hover .handle, .annot-mark.dragging .handle { opacity: 1; }
+@media (hover: none) { .annot-mark .handle { opacity: .9; } }
+.annot-grid rect { fill: none; stroke: #1e88e5; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.annot-rowwarn { fill: #f5a623; }
+@media print { .annot-head .row, .annot-warn, .annot-rowwarn { display: none; } }

@@ -281,6 +281,7 @@ async function runOCR() {
   const before = ta.value;
   const pages = [...state.images];
   const n = pages.length;
+  state.layout = null;
   btn.disabled = true;
   setStatus(status, n > 1 ? `正在识别第 1 / ${n} 页…` : '正在识别…', 'busy');
   const t0 = Date.now();
@@ -295,7 +296,7 @@ async function runOCR() {
   };
   try {
     // 逐页识别：每次只上传一页，避免多页一起上传时请求过大被中断
-    done = await ocrPages({
+    const out = await ocrPages({
       settings: state.settings,
       images: pages,
       onProgress: ({ text, page }) => {
@@ -307,6 +308,8 @@ async function runOCR() {
         setStatus(status, `正在识别${pageLabel}…已出 ${text.replace(/\s/g, '').length} 字`, 'busy');
       },
     });
+    done = out.text;
+    state.layout = out.layout;
     ta.value = done;
     showTextSteps();
     setStatus(status, `识别完成（${n > 1 ? `${n} 页，` : ''}用时 ${Math.round((Date.now() - t0) / 1000)} 秒），请在下方核对原文${n > 1 ? '，特别留意换页处的分段' : ''}。`, 'ok');
@@ -435,7 +438,7 @@ async function runMark() {
       onProgress: ({ chars, attempt }) =>
         setStatus(status, `正在批改${attempt > 1 ? '（上次格式有问题，自动重试中）' : ''}…已生成 ${chars} 字`, 'busy'),
     });
-    state.last = { body, title: meta.title, student, result, meta, stats };
+    state.last = { body, title: meta.title, student, result, meta, stats, _layout: state.layout, _text: raw };
     renderResult();
     saveHistory(state.last);
     setStatus(status, truncated ? '批改完成，但结果被截断，部分内容可能缺失，可以点「重新批改」。' : '批改完成。', truncated ? 'err' : 'ok');

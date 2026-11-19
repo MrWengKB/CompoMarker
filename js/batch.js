@@ -103,7 +103,7 @@ async function runOCR(e) {
       e.images = isPDF(e.file) ? await pdfToImages(e.file, (m) => ctx.toast(m, 4000)) : [await prepareImage(e.file)];
     }
     const n = e.images.length;
-    const text = await ocrPages({
+    const { text, layout } = await ocrPages({
       settings: ctx.getSettings(),
       images: e.images,
       onProgress: ({ text, page, pageChars }) => {
@@ -115,6 +115,7 @@ async function runOCR(e) {
       },
     });
     e.ocr.text = text;
+    e.layout = layout;
     e.ocr.state = 'done';
     e.ocr.progress = 1;
     const { student, body } = splitTitle(text);
@@ -189,7 +190,7 @@ async function runMark(e) {
     e.mark.progress = 1;
     e.mark.result = result;
     e.mark.truncated = truncated;
-    e.mark.entry = { body, title: meta.title, student: e.name, result, meta, stats };
+    e.mark.entry = { body, title: meta.title, student: e.name, result, meta, stats, _layout: e.layout, _text: e.ocr.text };
     saveHistory(e.mark.entry);
   } catch (err) {
     console.error(err);
